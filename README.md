@@ -86,12 +86,12 @@
 
 ### 💡 엔트리 블록 코딩 예시
 
-#### 1. 서버 연결 확인 후 게임 시작하기
+#### 1. 서버 연결 확인 후 작품 시작하기
 ```plaintext
 [작품이 시작되었을 때]
   [만약 <( [?!] ) = (1)> 라면]
     [말하기: "⚡ 멀티플레이 서버 연결 성공!"]
-    [신호 (게임시작) 보내기]
+    [신호 (작품시작) 보내기]
   [아니라면]
     [말하기: "⚠️ 오프라인 모드로 전환합니다."]
 ```
@@ -169,46 +169,13 @@ flowchart LR
 
 ```
 Entry Sync/
-├── extension/                 # 🧩 Chrome 확장프로그램 소스코드
-│   ├── manifest.json          # MV3 매니페스트 설정
-│   ├── content.js             # 엔트리 웹페이지 삽입 및 통신 브릿지
-│   ├── inject.js              # 엔트리 엔진(Page World) 내부 변수 후킹 및 상태 주입
-│   ├── popup.html             # 팝업 대시보드 UI
-│   ├── popup.js               # 팝업 상태 모니터링 로직
-│   └── icons/                 # 공식 아이콘 애셋
-│
-├── server/                    # ⚡ Cloudflare Workers & Durable Objects 백엔드
-│   ├── src/index.ts           # Room DO WebSocket 세션 및 Firebase 영구 저장 파티션
-│   ├── wrangler.toml          # Cloudflare 설정
-│   └── package.json           # 백엔드 패키지
-│
-└── 정보/                      # 🌐 공식 홈페이지 및 공지사항 시스템 (Serverless)
-    ├── index.html             # 공식 소개 및 인터랙티브 시뮬레이터 랜딩페이지
-    ├── styles.css             # 모던 다크 테마 디자인 시스템
-    ├── app.js                 # 공지사항 검색 및 클라이언트 상호작용
-    ├── notices.json           # 서버 없이 관리하는 공지사항/패치노트 데이터
-    ├── privacy.html           # 웹 열람용 개인정보처리방침
-    └── 개인정보처리방침.md     # 크롬 웹 스토어 심사용 공식 개인정보처리방침
-```
-
-<br />
-
----
-
-## 🛠️ 개발 및 자체 배포 (Developer Guide)
-
-### 1. 백엔드 (Cloudflare Workers) 배포
-```bash
-cd server
-npm install
-npx wrangler deploy
-```
-
-### 2. 정적 웹사이트 (공식 홈페이지) 배포
-```bash
-cd 정보
-# Cloudflare Pages로 1초 배포
-npx wrangler pages deploy . --project-name entry-sync
+|    extension/                 # 🧩 Chrome 확장프로그램 소스코드
+└──   ├── manifest.json          # MV3 매니페스트 설정
+      ├── content.js             # 엔트리 웹페이지 삽입 및 통신 브릿지
+      ├── inject.js              # 엔트리 엔진(Page World) 내부 변수 후킹 및 상태 주입
+      ├── popup.html             # 팝업 대시보드 UI
+      ├── popup.js               # 팝업 상태 모니터링 로직
+      └── icons/                 # 공식 아이콘 애셋
 ```
 
 <br />
