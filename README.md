@@ -14,7 +14,7 @@
   <p align="center">
     <a href="https://entry-sync.vercel.app/"><img src="https://img.shields.io/badge/Official%20Site-Visit%20Website-00d2ff?style=for-the-badge&logo=googlechrome&logoColor=white" alt="Official Website" /></a>
     <a href="https://chromewebstore.google.com"><img src="https://img.shields.io/badge/Chrome_Web_Store-Install%20Free-4285F4?style=for-the-badge&logo=googlechrome&logoColor=white" alt="Chrome Web Store" /></a>
-    <a href="https://github.com/good-bad-code/Entry-Sync/main/%EA%B0%9C%EC%9D%B8%EC%A0%95%EB%B3%B4%EC%B2%98%EB%A6%AC%EB%B0%A9%EC%B9%A8.md"><img src="https://img.shields.io/badge/Privacy%20Policy-Zero%20PII-10b981?style=for-the-badge&logo=shield&logoColor=white" alt="Privacy Policy" /></a>
+    <a href="https://github.com/good-bad-code/Entry-Sync/blob/main/%EA%B0%9C%EC%9D%B8%EC%A0%95%EB%B3%B4%EC%B2%98%EB%A6%AC%EB%B0%A9%EC%B9%A8.md"><img src="https://img.shields.io/badge/Privacy%20Policy-Zero%20PII-10b981?style=for-the-badge&logo=shield&logoColor=white" alt="Privacy Policy" /></a>
   </p>
 
   <p align="center">
