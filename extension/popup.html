@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Entry Sync</title>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="popup.css" />
+</head>
+<body>
+  <!-- New Project Toast -->
+  <div id="newProjectToast" class="toast">
+    <span class="material-symbols-outlined toast-icon">warning</span>
+    <span class="toast-message">새 프로젝트는 저장하여 고유넘버를 받기 전까지 저장되지 않습니다.</span>
+  </div>
+
+  <!-- Header -->
+  <div class="header">
+    <div class="header-left">
+      <div class="header-title">ENTRY SYNC</div>
+      <div class="header-subtitle">엔트리 작품 동기화</div>
+    </div>
+    <span class="project-badge" id="projectIdLabel"></span>
+  </div>
+
+  <!-- Connection Status -->
+  <div class="status-bar" id="statusBar">
+    <div class="status-left">
+      <span class="status-dot waiting" id="statusDot"></span>
+      <span class="status-text" id="statusText">대기 중</span>
+    </div>
+    <div class="status-right">
+      <span class="cf-badge">Cloudflare</span>
+      <span class="server-label" id="serverLabel" title="">—</span>
+    </div>
+  </div>
+
+  <!-- Variable Monitoring -->
+  <div class="section" id="recognitionSection">
+    <div class="section-title">상태 모니터링</div>
+    <div id="recognitionStatus" class="recognition-status">
+      <div class="empty-state" id="recognitionLoadingState">
+        <div class="empty-icon">⟳</div>
+        확인 중…
+      </div>
+    </div>
+  </div>
+
+
+
+  <!-- Footer -->
+  <div class="footer">
+    <div class="footer-links">
+      <a href="https://good-bad-code.github.io/entry-sync-extension/privacy" target="_blank" rel="noopener noreferrer" class="footer-link">개인정보 처리 방침</a>
+      <span class="footer-divider">|</span>
+      <a href="https://good-bad-code.github.io/entry-sync-extension/" target="_blank" rel="noopener noreferrer" class="footer-link">공식 홈페이지</a>
+    </div>
+  </div>
+
+  <script src="popup.js"></script>
+</body>
+</html>

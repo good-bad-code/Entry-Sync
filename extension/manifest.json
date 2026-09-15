@@ -1,0 +1,52 @@
+{
+  "manifest_version": 3,
+  "name": "Entry Sync",
+  "version": "1.0.0",
+  "description": "엔트리 작품 시작 시 ?! 상태 표기 및 ??(데이터 저장), !!(실시간 동기화), ?!(동기화+저장) 통합 동기화 확장프로그램",
+  "icons": {
+    "16": "icon16.png",
+    "48": "icon48.png",
+    "128": "icon128.png"
+  },
+  "permissions": [
+    "activeTab",
+    "storage"
+  ],
+  "host_permissions": [
+    "*://playentry.org/*",
+    "*://space.playentry.org/*"
+  ],
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "Entry Sync",
+    "default_icon": {
+      "16": "icon16.png",
+      "48": "icon48.png",
+      "128": "icon128.png"
+    }
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "*://playentry.org/*",
+        "*://space.playentry.org/*"
+      ],
+      "js": [
+        "content.js"
+      ],
+      "run_at": "document_end",
+      "all_frames": true
+    }
+  ],
+  "web_accessible_resources": [
+    {
+      "resources": [
+        "inject.js"
+      ],
+      "matches": [
+        "*://playentry.org/*",
+        "*://space.playentry.org/*"
+      ]
+    }
+  ]
+}
