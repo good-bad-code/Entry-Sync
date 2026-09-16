@@ -108,7 +108,10 @@
 
     // 3. Connect to Cloudflare Worker WebSocket
     function connectWebSocket(roomId) {
-        if (!roomId) return;
+        if (!roomId || roomId === 'new') {
+            console.log(`[EntrySync Content] 🛑 Skipping WebSocket connect for roomId: '${roomId}'`);
+            return;
+        }
         if (ws && (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING)) {
             return;
         }
@@ -173,9 +176,7 @@
 
                     // Save Data Only ACK
                     if (msg.type === 'SAVE_DATA_ONLY_ACK') {
-                        console.log('[EntrySync Content] ✅ SAVE_DATA_ONLY_ACK received from server. Safe to disconnect.');
-                        disconnectWebSocket();
-                        broadcastToFrames({ type: 'ENTRY_SYNC_STATUS_UPDATE', connected: false });
+                        console.log('[EntrySync Content] ✅ SAVE_DATA_ONLY_ACK received from server.');
                     }
                 } catch (e) {
                     console.error('[EntrySync Content] Error parsing WS message:', e);
@@ -191,10 +192,13 @@
                     }
                 } catch (e) {}
 
-                // Auto-reconnect ONLY if game is currently running and close was not intentional
-                if (isGameRunning && currentRoomId && !isIntentionalClose) {
+                // Auto-reconnect ONLY IF game is currently running OR user is in workspace edit page (/ws/)
+                // When game is stopped on play/view page, DO NOT continuously reconnect in a loop!
+                const isWorkspacePage = window.location.href.includes('/ws/');
+                if (currentRoomId && currentRoomId !== 'new' && !isIntentionalClose && (isGameRunning || isWorkspacePage)) {
                     setTimeout(() => {
-                        if (isGameRunning && currentRoomId && (!ws || ws.readyState === WebSocket.CLOSED)) {
+                        if (currentRoomId && currentRoomId !== 'new' && (!ws || ws.readyState === WebSocket.CLOSED) && (isGameRunning || isWorkspacePage)) {
+                            console.log('[EntrySync Content] 🔄 Auto-reconnecting WebSocket (active session)...');
                             connectWebSocket(currentRoomId);
                         }
                     }, 2500);
@@ -219,7 +223,7 @@
             console.log('[EntrySync Content] Closing Cloudflare WebSocket connection...');
             try {
                 if (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING) {
-                    ws.close(1000, 'Game stopped or page unloaded');
+                    ws.close(1000, 'Page unloaded');
                 }
             } catch (e) {}
             ws = null;
@@ -228,8 +232,9 @@
 
     function initSync() {
         currentRoomId = extractEntryId();
-        if (currentRoomId) {
+        if (currentRoomId && currentRoomId !== 'new') {
             console.log('[EntrySync Content] Target Entry Room ID extracted:', currentRoomId);
+            connectWebSocket(currentRoomId);
             return;
         }
 
@@ -238,11 +243,12 @@
 
         const observer = new MutationObserver(() => {
             const id = extractEntryId();
-            if (id && id !== currentRoomId) {
+            if (id && id !== 'new' && id !== currentRoomId) {
                 currentRoomId = id;
                 observer.disconnect();
                 clearInterval(retryInterval);
                 console.log('[EntrySync Content] (observer) Found Room ID:', currentRoomId);
+                connectWebSocket(currentRoomId);
             }
         });
 
@@ -253,11 +259,12 @@
         const retryInterval = setInterval(() => {
             retryCount++;
             const id = extractEntryId();
-            if (id && id !== currentRoomId) {
+            if (id && id !== 'new' && id !== currentRoomId) {
                 currentRoomId = id;
                 observer.disconnect();
                 clearInterval(retryInterval);
                 console.log(`[EntrySync Content] (retry #${retryCount}) Found Room ID:`, currentRoomId);
+                connectWebSocket(currentRoomId);
             } else if (retryCount >= maxRetries) {
                 observer.disconnect();
                 clearInterval(retryInterval);
@@ -283,43 +290,52 @@
                 currentRoomId = extractEntryId();
             }
 
-            console.log('[EntrySync Content] 🚀 Game Started. Connecting to Cloudflare WebSocket...');
-            if (currentRoomId) {
-                connectWebSocket(currentRoomId);
+            console.log('[EntrySync Content] 🚀 Game Started. Ensuring latest data from Cloudflare WebSocket...');
+            if (currentRoomId && currentRoomId !== 'new') {
+                if (ws && ws.readyState === WebSocket.OPEN) {
+                    console.log('[EntrySync Content] 🔄 WebSocket already connected. Requesting GET_LATEST_DATA...');
+                    try {
+                        ws.send(JSON.stringify({ 
+                            type: 'GET_LATEST_DATA',
+                            roomId: currentRoomId
+                        }));
+                    } catch (e) {
+                        connectWebSocket(currentRoomId);
+                    }
+                } else {
+                    connectWebSocket(currentRoomId);
+                }
             }
         }
 
-        // When Game Stops (Engine Stop)
-        if (event.data.type === 'ENTRY_SYNC_ENGINE_STOP') {
+        // When Game Stops (Engine Stop) or Workspace Property Edited
+        if (event.data.type === 'ENTRY_SYNC_ENGINE_STOP' || event.data.type === 'ENTRY_SYNC_SAVE_DATA_NOW') {
             if (!isTopFrame) {
                 window.top.postMessage(event.data, '*');
                 return;
             }
-            isGameRunning = false;
-            console.log('[EntrySync Content] ⏹️ Game stopped.');
+            if (event.data.type === 'ENTRY_SYNC_ENGINE_STOP') {
+                isGameRunning = false;
+                console.log('[EntrySync Content] ⏹️ Game stopped.');
+            }
 
-            // Save ?? Data Only snapshot if available
-            if (event.data.dataOnlySnapshot && ws && ws.readyState === WebSocket.OPEN) {
-                console.log('[EntrySync Content] 💾 Sending ?? Data Only snapshot before disconnect...', event.data.dataOnlySnapshot);
+            if (!currentRoomId) {
+                currentRoomId = extractEntryId();
+            }
+
+            // Save ?? Data Only / ?! Sync Data snapshot if available
+            if (currentRoomId && currentRoomId !== 'new' && (event.data.dataOnlySnapshot || event.data.syncDataSnapshot) && ws && ws.readyState === WebSocket.OPEN) {
+                console.log(`[EntrySync Content] 💾 Sending snapshot save request to Cloudflare (roomId: ${currentRoomId})...`, event.data);
                 try {
                     ws.send(JSON.stringify({
                         type: 'SAVE_DATA_ONLY',
-                        payload: event.data.dataOnlySnapshot,
+                        roomId: currentRoomId,
+                        payload: event.data.dataOnlySnapshot || null,
                         syncData: event.data.syncDataSnapshot || null
                     }));
                 } catch (e) {
                     console.error('[EntrySync Content] Error sending SAVE_DATA_ONLY:', e);
                 }
-                // Fallback disconnect after 1200ms if ACK not received
-                setTimeout(() => {
-                    if (ws && (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING)) {
-                        disconnectWebSocket();
-                        broadcastToFrames({ type: 'ENTRY_SYNC_STATUS_UPDATE', connected: false });
-                    }
-                }, 1200);
-            } else {
-                disconnectWebSocket();
-                broadcastToFrames({ type: 'ENTRY_SYNC_STATUS_UPDATE', connected: false });
             }
         }
 
@@ -330,10 +346,14 @@
                 return;
             }
             isGameRunning = false;
-            if (event.data.dataOnlySnapshot && ws && ws.readyState === WebSocket.OPEN) {
+            if (!currentRoomId) {
+                currentRoomId = extractEntryId();
+            }
+            if (currentRoomId && currentRoomId !== 'new' && event.data.dataOnlySnapshot && ws && ws.readyState === WebSocket.OPEN) {
                 try {
                     ws.send(JSON.stringify({
                         type: 'SAVE_DATA_ONLY',
+                        roomId: currentRoomId,
                         payload: event.data.dataOnlySnapshot,
                         syncData: event.data.syncDataSnapshot || null
                     }));
