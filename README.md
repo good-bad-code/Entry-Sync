@@ -12,8 +12,8 @@
   </p>
 
   <p align="center">
-    <a href="https://entry-sync.vercel.app/"><img src="https://img.shields.io/badge/Official%20Site-Visit%20Website-00d2ff?style=for-the-badge&logo=googlechrome&logoColor=white" alt="Official Website" /></a>
-    <a href="https://chromewebstore.google.com"><img src="https://img.shields.io/badge/Chrome_Web_Store-Install%20Free-4285F4?style=for-the-badge&logo=googlechrome&logoColor=white" alt="Chrome Web Store" /></a>
+    <a href="https://entry-sync-site.pages.dev/"><img src="https://img.shields.io/badge/Official%20Site-Visit%20Website-00d2ff?style=for-the-badge&logo=googlechrome&logoColor=white" alt="Official Website" /></a>
+    <a href="https://chromewebstore.google.com/detail/ppkhmgmenfkjiajhfjpoepaldalhicll?utm_source=item-share-cb"><img src="https://img.shields.io/badge/Chrome_Web_Store-Install%20Free-4285F4?style=for-the-badge&logo=googlechrome&logoColor=white" alt="Chrome Web Store" /></a>
     <a href="https://github.com/good-bad-code/Entry-Sync/blob/main/%EA%B0%9C%EC%9D%B8%EC%A0%95%EB%B3%B4%EC%B2%98%EB%A6%AC%EB%B0%A9%EC%B9%A8.md"><img src="https://img.shields.io/badge/Privacy%20Policy-Zero%20PII-10b981?style=for-the-badge&logo=shield&logoColor=white" alt="Privacy Policy" /></a>
   </p>
 
@@ -188,7 +188,7 @@ Entry Sync는 사용자의 신뢰와 보안을 가장 중요하게 생각합니�
 
 - 🔒 **개인식별정보 0%**: 이름, 이메일, 계정 비밀번호, 금융 정보, 브라우징 히스토리를 전혀 수집하지 않습니다.
 - 🔐 **암호화 통신**: 모든 네트워크 통신은 최신 TLS 1.3 / HTTPS 및 보안 WebSocket(WSS) 프로토콜을 통과합니다.
-- 📋 **투명한 정책**: 자세한 내용은 [개인정보처리방침.md](./개인정보처리방침.md) 또는 [온라인 개인정보처리방침](https://entry-sync.vercel.app/privacy)에서 확인하실 수 있습니다.
+- 📋 **투명한 정책**: 자세한 내용은 [개인정보처리방침.md](./개인정보처리방침.md) 또는 [온라인 개인정보처리방침](https://entry-sync-site.pages.dev/privacy)에서 확인하실 수 있습니다.
 
 <br />
 
@@ -200,7 +200,7 @@ Entry Sync는 오픈소스 프로젝트이며 커뮤니티의 피드백과 기�
 
 - **버그 제보 및 기능 제안:** [GitHub Issues](https://github.com/good-bad-code/Entry-Sync/issues)
 - **개발팀 문의 이메일:** `syho2058@gmail.com`
-- **공식 웹사이트:** [https://entry-sync.vercel.app/](https://entry-sync.vercel.app/)
+- **공식 웹사이트:** [https://entry-sync-site.pages.dev/](https://entry-sync-site.pages.dev/)
 
 <br />
 
