@@ -1,6 +1,6 @@
 <div align="center">
 
-  <img src="https://raw.githubusercontent.com/good-bad-code/Entry-Sync/main/extension/icon128.png" alt="Entry Sync Logo" width="96" height="96" style="border-radius: 18px; box-shadow: 0 4px 20px rgba(0, 210, 255, 0.3);" />
+  <img src="https://github.com/good-bad-code/Entry-Sync/blob/main/extension/icon128.png" alt="Entry Sync Logo" width="96" height="96" style="border-radius: 18px; box-shadow: 0 4px 20px rgba(0, 210, 255, 0.3);" />
 
   # Entry Sync (엔트리 싱크)
 
