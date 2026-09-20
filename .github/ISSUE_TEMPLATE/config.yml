@@ -6,5 +6,5 @@ contact_links:
     about: 질문이나 아이디어에 대한 자유로운 대화는 Discussions를 이용해주세요.
 
   - name: 🔐 Security
-    url: https://github.com/good-bad-code/Entry-Sync/security
-    about: 보안 취약점은 공개 Issue로 제보하지 말고 Security 정책을 확인해주세요.
+    url: https://github.com/good-bad-code/Entry-Sync/security/policy
+    about: 보안 취약점 제보 방법과 보안 정책을 확인해주세요.
