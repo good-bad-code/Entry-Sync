@@ -198,13 +198,26 @@ Entry Sync는 사용자의 신뢰와 보안을 가장 중요하게 생각합니�
 
 ---
 
-## 기여 및 문의 (Contact & Feedback)
+## 🤝 기여 및 문의 (Contributing & Contact)
 
 Entry Sync는 오픈소스 프로젝트이며 커뮤니티의 피드백과 기여를 언제나 환영합니다!
 
-- **버그 제보 및 기능 제안:** [GitHub Issues](https://github.com/good-bad-code/Entry-Sync/issues)
-- **개발팀 문의 이메일:** `syho2058@gmail.com`
-- **공식 웹사이트:** [https://entry-sync-site.pages.dev/](https://entry-sync-site.pages.dev/)
+### 기여하기
+
+버그 수정, 기능 개선, 문서 수정, 아이디어 제안 등 다양한 형태의 기여를 환영합니다.
+
+기여하기 전에 아래 문서를 확인해주세요.
+
+- 📖 [Contributing Guide](CONTRIBUTING.md) — 프로젝트에 기여하는 방법
+- 🤝 [Code of Conduct](CODE_OF_CONDUCT.md) — 커뮤니티 행동 규칙
+- 🔐 [Security Policy](SECURITY.md) — 보안 취약점 신고 방법
+
+### 문의 및 피드백
+
+- 🐛 버그 제보 및 기능 제안: [GitHub Issues](../../issues)
+- 📧 개발팀 문의: `syho2058@gmail.com`
+- 🌐 공식 웹사이트: https://entry-sync-site.pages.dev/
+- 🔒 개인정보처리방침: [개인정보처리방침.md](개인정보처리방침.md)
 
 <br />
 
