@@ -1,0 +1,114 @@
+name: 🐛 Bug Report
+description: Entry-Sync에서 발생한 버그를 제보해주세요.
+title: "[Bug] "
+labels:
+  - bug
+
+body:
+  - type: markdown
+    attributes:
+      value: |
+        ## 🐛 버그 제보
+
+        Entry-Sync의 문제를 제보해주셔서 감사합니다.
+        아래 정보를 최대한 자세하게 작성해주세요.
+
+        > ⚠️ 비밀번호, API Key, 토큰 등의 민감한 정보는 절대 포함하지 마세요.
+
+  - type: textarea
+    id: description
+    attributes:
+      label: 버그 설명
+      description: 어떤 문제가 발생했는지 설명해주세요.
+      placeholder: 예) 동기화 버튼을 눌러도 데이터가 업데이트되지 않습니다.
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: 재현 방법
+      description: 문제를 재현할 수 있는 방법을 순서대로 작성해주세요.
+      placeholder: |
+        1. Entry 사이트에 접속합니다.
+        2. Entry-Sync를 실행합니다.
+        3. 동기화 버튼을 클릭합니다.
+        4. 문제가 발생합니다.
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: 예상했던 동작
+      description: 원래 어떻게 동작해야 한다고 생각했는지 작성해주세요.
+      placeholder: 정상적으로 데이터가 동기화되어야 합니다.
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: 실제 동작
+      description: 실제로 어떤 일이 발생했는지 작성해주세요.
+      placeholder: 동기화가 진행되지 않고 아무런 변화가 없습니다.
+    validations:
+      required: true
+
+  - type: dropdown
+    id: browser
+    attributes:
+      label: 브라우저
+      options:
+        - Google Chrome
+        - Microsoft Edge
+        - Other
+    validations:
+      required: true
+
+  - type: input
+    id: browser-version
+    attributes:
+      label: 브라우저 버전
+      placeholder: 예) Chrome 153.0.0.0
+    validations:
+      required: true
+
+  - type: dropdown
+    id: os
+    attributes:
+      label: 운영체제
+      options:
+        - Windows
+        - macOS
+        - Linux
+        - Other
+    validations:
+      required: true
+
+  - type: input
+    id: extension-version
+    attributes:
+      label: Entry-Sync 버전
+      placeholder: 예) v1.0.0
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: 오류 로그
+      description: 관련된 콘솔 오류나 로그가 있다면 작성해주세요.
+      render: text
+
+  - type: textarea
+    id: screenshots
+    attributes:
+      label: 스크린샷 / 영상
+      description: 문제를 이해하는 데 도움이 되는 자료를 첨부해주세요.
+
+  - type: textarea
+    id: additional
+    attributes:
+      label: 추가 정보
+      description: 문제와 관련된 추가 정보가 있다면 작성해주세요.
