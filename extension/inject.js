@@ -6,6 +6,7 @@
  * 2. '??' Data Only Variables/Lists (Firebase fetch on start, Firebase save on stop)
  * 3. '!!' Sync Only Variables/Lists (Real-time WebSocket sync, purged on 0 members)
  * 4. '?!' Sync + Data Variables/Lists (Real-time sync + Firebase persistence on 0 members)
+ * 5. The same for works played in the tessvm runner (window.tessvm, no window.Entry)
  */
 (function () {
     const PREFIX_DATA_ONLY = '??';
@@ -1163,13 +1164,257 @@
         }
     }
 
-    // ===== 8. Window PostMessage Listener (Bridge with content.js) =====
+    // ===== 8. tessvm Runner Support =====
+    // The "tessvm for Entry" extension replaces the play page's Entry iframe with its own
+    // runner, so there is no window.Entry at all. It leaves its player handle at
+    // window.tessvm = { vm, start, stop, ... }. vm.variables holds every variable and list as
+    // { name, value, array: [{ data }], revision, setValue(), touch() }; every write bumps
+    // `revision` (setValue does it itself, list blocks call touch()), so local changes are
+    // found by comparing revisions after each engine tick instead of hooking each block.
+    const tess = {
+        vm: null,
+        variablesRef: null,
+        managed: [],            // tessvm variables whose names are ??x, !!x or ?!x
+        seen: new Map(),        // variable -> revision already sent or applied
+        known: { variables: {}, lists: {} }, // latest room / local value per managed name
+        startingUp: false,      // like isStartingUp: local changes are dropped, not sent
+        startTimer: null
+    };
+
+    function tessManagedName(name) {
+        return isRealtimeTarget(name) || isDataOnlyTarget(name);
+    }
+
+    function tessRefreshManaged() {
+        const vm = tess.vm;
+        if (!vm || tess.variablesRef === vm.variables) return;
+        tess.variablesRef = vm.variables;
+        tess.managed = (vm.variables || []).filter(v => tessManagedName(v.name));
+        tess.managed.forEach(v => {
+            // Same as the Entry path: Entry's own cloud / real-time mode is switched off
+            v.isCloud = false;
+            v.isRealTime = false;
+            tess.seen.set(v, v.revision);
+        });
+        if (Array.isArray(vm.storedVars)) {
+            vm.storedVars = vm.storedVars.filter(v => !tessManagedName(v.name));
+        }
+    }
+
+    function tessValueOf(v) {
+        return v.isList ? v.array.map(item => item.data) : v.value;
+    }
+
+    function tessSetVar(v, value) {
+        v.setValue(value);
+        tess.seen.set(v, v.revision);
+    }
+
+    function tessSetList(v, arr) {
+        v.array = arr.map(item => ({ data: item }));
+        v.touch();
+        tess.seen.set(v, v.revision);
+    }
+
+    function tessCleanList(array, keepEmpty) {
+        const rawArr = Array.isArray(array) ? array : [];
+        const plain = rawArr.map(item => (typeof item === 'object' && item !== null && 'data' in item) ? item.data : item);
+        // Initial data drops empty items and remote updates turn them into '', as on Entry
+        return keepEmpty
+            ? plain.map(item => (item !== undefined && item !== null ? item : ''))
+            : plain.filter(item => item !== null && item !== undefined);
+    }
+
+    function tessApplyVar(name, value) {
+        tess.known.variables[name] = value;
+        if (!tess.vm) return;
+        tessRefreshManaged();
+        tess.managed.forEach(v => {
+            if (!v.isList && v.name === name) tessSetVar(v, value);
+        });
+    }
+
+    function tessApplyList(name, arr) {
+        tess.known.lists[name] = arr;
+        if (!tess.vm) return;
+        tessRefreshManaged();
+        tess.managed.forEach(v => {
+            if (v.isList && v.name === name) tessSetList(v, arr);
+        });
+    }
+
+    // Initial room bundle; kept even before tessvm has loaded the work
+    function tessApplyPayload(payload) {
+        if (!payload) return;
+        function vars(data) {
+            if (!data) return;
+            const items = Array.isArray(data) ? data : Object.entries(data).map(([name, value]) => ({ name, value }));
+            items.forEach(v => {
+                if (v.name && tessManagedName(v.name) && v.value !== undefined && v.value !== null) tessApplyVar(v.name, v.value);
+            });
+        }
+        function lists(data) {
+            if (!data) return;
+            const items = Array.isArray(data) ? data : Object.entries(data).map(([name, array]) => ({ name, array }));
+            items.forEach(l => {
+                if (l.name && tessManagedName(l.name)) tessApplyList(l.name, tessCleanList(l.array, false));
+            });
+        }
+        if (payload.dataOnly) { vars(payload.dataOnly.variables); lists(payload.dataOnly.lists); }
+        if (payload.syncOnly) { vars(payload.syncOnly.variables); lists(payload.syncOnly.lists); }
+        if (payload.syncData) { vars(payload.syncData.variables); lists(payload.syncData.lists); }
+        if (payload.variables) vars(payload.variables);
+        if (payload.lists) lists(payload.lists);
+        if (tess.vm) {
+            tess.startingUp = false;
+            console.log('[EntrySync Inject] 📥 tessvm: room data applied');
+        }
+    }
+
+    // After a stop (and at each start) tessvm puts every variable back to what the work was
+    // saved with; the latest room / local values go back in, as the Entry path does.
+    function tessApplyKnown() {
+        tessRefreshManaged();
+        tess.managed.forEach(v => {
+            if (v.isList) {
+                if (Array.isArray(tess.known.lists[v.name])) tessSetList(v, tess.known.lists[v.name]);
+            } else if (Object.prototype.hasOwnProperty.call(tess.known.variables, v.name)) {
+                tessSetVar(v, tess.known.variables[v.name]);
+            }
+        });
+    }
+
+    function tessUpdateStatus() {
+        const vm = tess.vm;
+        if (!vm || !vm.variables) return;
+        const expected = isConnectedToCloudflare ? 1 : -1;
+        vm.variables.forEach(v => {
+            if (!v.isList && isStatusVar(v.name) && v.value !== expected) v.setValue(expected);
+        });
+    }
+
+    // Sends what the work changed since the last tick: at most one message per variable or
+    // list per tick, holding its last value (lists are sent whole, last write wins)
+    function tessFlush() {
+        tessRefreshManaged();
+        tess.managed.forEach(v => {
+            if (tess.seen.get(v) === v.revision) return;
+            tess.seen.set(v, v.revision);
+            if (tess.startingUp) return;
+            const value = tessValueOf(v);
+            if (v.isList) tess.known.lists[v.name] = value;
+            else tess.known.variables[v.name] = value;
+            if (!isRealtimeTarget(v.name)) return;
+            if (v.isList) {
+                window.postMessage({ type: 'ENTRY_SYNC_LIST_CHANGED', name: v.name, array: value }, '*');
+            } else {
+                window.postMessage({ type: 'ENTRY_SYNC_VAR_CHANGED', name: v.name, value: value }, '*');
+            }
+        });
+    }
+
+    function tessSnapshot(test) {
+        const snapshot = { variables: {}, lists: {} };
+        tessRefreshManaged();
+        tess.managed.forEach(v => {
+            if (!test(v.name)) return;
+            if (v.isList) snapshot.lists[v.name] = tessValueOf(v);
+            else if (v.value !== undefined && v.value !== null) snapshot.variables[v.name] = v.value;
+        });
+        return snapshot;
+    }
+
+    function tessOnRun() {
+        tess.startingUp = true;
+        if (tess.startTimer) clearTimeout(tess.startTimer);
+        // Cleared when the room data arrives; safety fallback after 4s, as on Entry
+        tess.startTimer = setTimeout(() => { tess.startingUp = false; }, 4000);
+        tessUpdateStatus();
+        tess.managed.forEach(v => tess.seen.set(v, v.revision));
+        console.log('[EntrySync Inject] 🚀 tessvm run');
+        window.postMessage({ type: 'ENTRY_SYNC_ENGINE_RUN' }, '*');
+    }
+
+    function tessBind(vm) {
+        tess.vm = vm;
+        tess.variablesRef = null;
+        tess.seen = new Map();
+        tessRefreshManaged();
+        if (!vm.__entrySyncHooked) {
+            vm.__entrySyncHooked = true;
+            const originalTick = vm.tick;
+            vm.tick = function () {
+                const ret = originalTick.apply(this, arguments);
+                if (tess.vm === vm) {
+                    try { tessFlush(); } catch (e) { console.error('[EntrySync Inject] tessvm flush error:', e); }
+                }
+                return ret;
+            };
+            const originalReset = vm.reset;
+            vm.reset = function () {
+                const ret = originalReset.apply(this, arguments);
+                if (tess.vm === vm) tessApplyKnown();
+                return ret;
+            };
+            const originalStart = vm.start;
+            vm.start = function () {
+                const fresh = this.state === 'stop';
+                const ret = originalStart.apply(this, arguments);
+                if (fresh && tess.vm === vm) tessOnRun();
+                return ret;
+            };
+            const originalStop = vm.stop;
+            vm.stop = function () {
+                if (this.state !== 'stop' && tess.vm === vm) {
+                    try {
+                        tessFlush();
+                        window.postMessage({
+                            type: 'ENTRY_SYNC_ENGINE_STOP',
+                            dataOnlySnapshot: tessSnapshot(isDataOnlyTarget),
+                            syncDataSnapshot: tessSnapshot(isSyncDataTarget)
+                        }, '*');
+                        console.log('[EntrySync Inject] ⏹️ tessvm stop');
+                    } catch (e) {
+                        console.error('[EntrySync Inject] tessvm stop error:', e);
+                    }
+                }
+                return originalStop.apply(this, arguments);
+            };
+        }
+        tessApplyKnown();
+        tessUpdateStatus();
+        console.log(`[EntrySync Inject] 🎯 tessvm runner found (${tess.managed.length} synced variables/lists)`);
+        if (vm.state !== 'stop') tessOnRun();
+    }
+
+    function tessPoll() {
+        const handle = window.tessvm;
+        const vm = handle && handle.vm;
+        if (!vm || !Array.isArray(vm.variables) || typeof vm.tick !== 'function') return;
+        if (vm !== tess.vm) tessBind(vm);
+        // Continuously ensure the status variable matches the connection while running
+        if (vm.state === 'run') tessUpdateStatus();
+    }
+
+    function tessInspect() {
+        const result = { hasSyncVars: false, vars: {}, lists: [] };
+        (tess.vm ? tess.vm.variables : []).forEach(v => {
+            if (!v.name) return;
+            if (v.isList) result.lists.push({ name: v.name });
+            else result.vars[v.name] = v.value;
+            if (isAnyManagedTarget(v.name)) result.hasSyncVars = true;
+        });
+        return result;
+    }
+
+    // ===== 9. Window PostMessage Listener (Bridge with content.js) =====
     window.addEventListener('message', function (event) {
         if (!event.data) return;
 
         // Connection status changed
         if (event.data.type === 'ENTRY_SYNC_STATUS_UPDATE') {
             updateStatusVariable(event.data.connected);
+            tessUpdateStatus();
             if (event.data.connected) {
                 setupSyncHooks();
             }
@@ -1179,25 +1424,33 @@
         if (event.data.type === 'ENTRY_SYNC_APPLY_INITIAL_DATA') {
             console.log('[EntrySync Inject] Applying initial room data bundle:', event.data.payload);
             updateStatusVariable(event.data.connected);
+            tessUpdateStatus();
             setupSyncHooks();
             if (event.data.payload) {
                 applyInitialData(event.data.payload);
+                tessApplyPayload(event.data.payload);
             }
         }
 
         // Realtime Remote Variable Update (!! or ?!)
         if (event.data.type === 'ENTRY_SYNC_REMOTE_VAR_UPDATE') {
             applyRemoteVar(event.data.name, event.data.value);
+            if (event.data.name && tessManagedName(event.data.name)) {
+                tessApplyVar(event.data.name, event.data.value);
+            }
         }
 
         // Realtime Remote List Update (!! or ?!)
         if (event.data.type === 'ENTRY_SYNC_REMOTE_LIST_UPDATE') {
             applyRemoteList(event.data.name, event.data.array);
+            if (event.data.name && tessManagedName(event.data.name)) {
+                tessApplyList(event.data.name, tessCleanList(event.data.array, true));
+            }
         }
 
         // Query variable recognition status for Popup
         if (event.data.type === 'REQ_ENTRY_VARS_INSPECTION') {
-            const inspection = inspectProjectVariables();
+            const inspection = (!window.Entry && tess.vm) ? tessInspect() : inspectProjectVariables();
             window.postMessage({
                 type: 'RESP_ENTRY_VARS_INSPECTION',
                 inspection: inspection
@@ -1213,6 +1466,12 @@
                 type: 'ENTRY_SYNC_PAGE_UNLOAD',
                 dataOnlySnapshot: dataOnlySnapshot
             }, '*');
+        } else if (tess.vm && tess.vm.state !== 'stop') {
+            window.postMessage({
+                type: 'ENTRY_SYNC_PAGE_UNLOAD',
+                dataOnlySnapshot: tessSnapshot(isDataOnlyTarget),
+                syncDataSnapshot: tessSnapshot(isSyncDataTarget)
+            }, '*');
         }
     }
 
@@ -1222,6 +1481,8 @@
     // Polling backup for dynamic iframe injection & engine detection
     let lastKnownRunState = false;
     const checkInterval = setInterval(function () {
+        try { tessPoll(); } catch (e) { console.error('[EntrySync Inject] tessvm poll error:', e); }
+
         // Works on both play page (with engine) AND workspace page (without engine)
         const hasEntry = window.Entry && window.Entry.variableContainer;
         if (hasEntry) {
