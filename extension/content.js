@@ -34,6 +34,23 @@
         tabId = 'tab_' + Math.random().toString(36).substring(2, 9) + '_' + Date.now();
     }
 
+    
+    // Helper to validate whether an extracted ID is a real Entry project ID (and not a URL path keyword like 'list', 'search', etc.)
+    function isValidEntryId(id) {
+        if (!id || typeof id !== 'string') return false;
+        const lower = id.trim().toLowerCase();
+        if (lower === 'new') return false;
+
+        const reservedKeywords = [
+            'list', 'all', 'search', 'rank', 'ranking', 'community',
+            'popular', 'category', 'notice', 'guide', 'create', 'explore'
+        ];
+        if (reservedKeywords.includes(lower)) return false;
+
+        // Valid Entry project ID: 24-character hexadecimal ObjectId or 12+ character alphanumeric string
+        return /^[a-fA-F0-9]{24}$/.test(id) || /^[a-zA-Z0-9_-]{12,}$/.test(id);
+    }
+
     // 1. Extract Unique Entry ID
     function extractEntryId() {
         // Method A: Check iframe src matching /iframe/고유넘버
