@@ -835,6 +835,15 @@
     }
 
     // ===== 6. Inspect Entry Variables for Popup Recognition =====
+        function postInspectionUpdate() {
+        const inspection = (!window.Entry && tess.vm) ? tessInspect() : inspectProjectVariables();
+        window.postMessage({
+            type: 'RESP_ENTRY_VARS_INSPECTION',
+            inspection: inspection
+        }, '*');
+        return inspection;
+    }
+
     function inspectProjectVariables() {
         const result = {
             hasSyncVars: false,
