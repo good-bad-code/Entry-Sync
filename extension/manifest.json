@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Entry Sync",
-  "version": "1.0.0",
+  "version": "1.0.3",
   "description": "엔트리 작품 시작 시 ?! 상태 표기 및 ??(데이터 저장), !!(실시간 동기화), ?!(동기화+저장) 통합 동기화 확장프로그램",
   "icons": {
     "16": "icon16.png",
