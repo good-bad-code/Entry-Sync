@@ -188,8 +188,8 @@
                             }
                         }
 
-                        // Broadcast !! and ?! in real-time to peers
-                        if (isRealtimeTarget(name)) {
+                        // Broadcast !! and ?! in real-time to peers ONLY during game run and NOT stopping
+                        if (isRealtimeTarget(name) && isEngineRunning && !isGameStopping) {
                             window.postMessage({
                                 type: 'ENTRY_SYNC_VAR_CHANGED',
                                 name: name,
@@ -339,8 +339,8 @@
                             }
                         }
 
-                        // Broadcast !! and ?! in real-time to peers ONLY during game run and NOT from pure updateView
-                        if (isRealtimeTarget(name) && isEngineRunning && !isFromUpdateView) {
+                        // Broadcast !! and ?! in real-time to peers ONLY during game run and NOT from pure updateView or game stop
+                        if (isRealtimeTarget(name) && isEngineRunning && !isGameStopping && !isFromUpdateView) {
                             window.postMessage({
                                 type: 'ENTRY_SYNC_LIST_CHANGED',
                                 name: name,
@@ -944,8 +944,11 @@
                 syncDataSnapshot: syncDataSnapshot
             }, '*');
 
-            // Clear frozenSyncData after a delay — post-stop workspace edits should use live Entry values
-            setTimeout(function () { frozenSyncData = null; }, 800);
+            // Clear frozenSyncData & release isGameStopping lock after 1500ms delay to prevent reset echoes
+            setTimeout(function () {
+                frozenSyncData = null;
+                isGameStopping = false;
+            }, 1500);
         }
 
         if (!isHooked) {
