@@ -54,6 +54,102 @@
         return isDataOnlyTarget(name) || isSyncOnlyTarget(name) || isSyncDataTarget(name) || isStatusVar(name);
     }
 
+    // Auth info received from content.js (top frame where __NEXT_DATA__ is accessible)
+    let _cachedAuthInfo = { currentUserId: null, projectAuthorId: null };
+
+    // Extract project ID from current URL (works in both top frame and iframe)
+    function extractProjectIdFromUrl() {
+        try {
+            let href = '';
+            try { href = window.location.href; } catch (e) {}
+            if (!href || !href.includes('/ws/')) {
+                try { href = window.top.location.href; } catch (e) {}
+            }
+            const match = href.match(/\/ws\/([a-fA-F0-9a-zA-Z_-]+)/);
+            const result = match ? match[1] : null;
+            console.log(`[EntrySync Inject] 🔍 extractProjectIdFromUrl: href='${href}', result='${result}'`);
+            return result;
+        } catch (e) {
+            console.warn('[EntrySync Inject] extractProjectIdFromUrl error:', e);
+            return null;
+        }
+    }
+
+    // Fetch project author ID via PlayEntry GraphQL
+    // inject.js runs in page context so session cookies are included automatically
+    async function fetchProjectAuthorIdViaGraphQL(projectId) {
+        if (!projectId) return null;
+        try {
+            // Step 1: Fetch current page HTML to extract CSRF token
+            // (_csrf cookie is HttpOnly so document.cookie can't read it)
+            let csrfToken = '';
+            try {
+                const htmlRes = await fetch(window.location.href, { credentials: 'include' });
+                if (htmlRes.ok) {
+                    const html = await htmlRes.text();
+                    const m = html.match(/csrfToken["']?\s*[:=]\s*["']([^"']+)["']/i);
+                    if (m) csrfToken = m[1];
+                }
+            } catch (e) {}
+
+            console.log(`[EntrySync Inject] 🌐 GraphQL fetch for projectId='${projectId}', csrfToken='${csrfToken ? csrfToken.substring(0, 10) + '...' : '(empty)'}'`);
+            // Step 2: POST to GraphQL with CSRF token
+            const res = await fetch('https://playentry.org/graphql', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'csrf-token': csrfToken,
+                    'x-csrf-token': csrfToken
+                },
+                body: JSON.stringify({
+                    query: 'query SELECT_PROJECT($id: ID!) { project(id: $id) { id user { id } } }',
+                    variables: { id: projectId }
+                })
+            });
+            console.log(`[EntrySync Inject] 🌐 GraphQL response status: ${res.status}`);
+            if (res.ok) {
+                const json = await res.json();
+                console.log(`[EntrySync Inject] 🌐 GraphQL response data:`, JSON.stringify(json).substring(0, 200));
+                return json?.data?.project?.user?.id || null;
+            } else {
+                const text = await res.text();
+                console.warn(`[EntrySync Inject] 🌐 GraphQL failed: ${res.status} - ${text.substring(0, 100)}`);
+            }
+        } catch (e) {
+            console.error('[EntrySync Inject] 🌐 GraphQL fetch error:', e);
+        }
+        return null;
+    }
+
+    function getUserAndAuthorInfo() {
+        // Priority 1: Use auth info sent from content.js (most reliable source)
+        if (_cachedAuthInfo.currentUserId || _cachedAuthInfo.projectAuthorId) {
+            return { ..._cachedAuthInfo };
+        }
+        // Priority 2: Try window.Entry as fallback (may not be available yet or in this frame)
+        try {
+            if (window.Entry) {
+                let currentUserId = null;
+                let projectAuthorId = null;
+                if (window.Entry.user) {
+                    currentUserId = window.Entry.user._id || window.Entry.user.id || null;
+                }
+                if (window.Entry.project) {
+                    const pUser = window.Entry.project.user;
+                    if (pUser) {
+                        projectAuthorId = typeof pUser === 'object' ? (pUser._id || pUser.id || null) : pUser;
+                    } else if (window.Entry.project.userId) {
+                        projectAuthorId = window.Entry.project.userId;
+                    }
+                }
+                if (currentUserId || projectAuthorId) {
+                    return { currentUserId, projectAuthorId };
+                }
+            }
+        } catch (e) {}
+        return { currentUserId: null, projectAuthorId: null };
+    }
+
     // ===== 1. Update Connection Status Variable (?!) =====
     // Requirement: 작품 시작 누르자마자 변경 및 서버 연결 상태 숫자와 ?! 자체인 변수의 값이 다를 때마다 지속적으로 업데이트
     function updateStatusVariable(connected) {
@@ -104,6 +200,11 @@
             console.log('[EntrySync Inject] ⏳ Skipping triggerWorkspaceSave (initial data not loaded yet)');
             return;
         }
+        const { currentUserId, projectAuthorId } = getUserAndAuthorInfo();
+        if (currentUserId && projectAuthorId && currentUserId !== projectAuthorId) {
+            console.log(`[EntrySync Inject] 🛡️ Skipping triggerWorkspaceSave: Logged-in user (${currentUserId}) != Project Author (${projectAuthorId})`);
+            return;
+        }
         if (workspaceSaveDebounceTimer) clearTimeout(workspaceSaveDebounceTimer);
         workspaceSaveDebounceTimer = setTimeout(() => {
             const dataOnlySnapshot = captureDataOnlySnapshot();
@@ -111,6 +212,8 @@
             console.log('[EntrySync Inject] 💾 triggerWorkspaceSave dispatched:', { dataOnly: dataOnlySnapshot, syncData: syncDataSnapshot });
             window.postMessage({
                 type: 'ENTRY_SYNC_SAVE_DATA_NOW',
+                currentUserId: currentUserId,
+                projectAuthorId: projectAuthorId,
                 dataOnlySnapshot: dataOnlySnapshot,
                 syncDataSnapshot: syncDataSnapshot
             }, '*');
@@ -708,9 +811,28 @@
         } finally {
             isApplyingRemote = false;
             isStartingUp = false;
-            setTimeout(() => {
+            setTimeout(async () => {
                 isInitialDataLoaded = true;
-                console.log('[EntrySync Inject] ✅ isInitialDataLoaded = true. Workspace saves now enabled.');
+                let { currentUserId, projectAuthorId } = getUserAndAuthorInfo();
+
+                // If projectAuthorId is still null, fetch from PlayEntry GraphQL
+                // (inject.js runs in page context so session cookies are included)
+                if (!projectAuthorId) {
+                    const projectId = extractProjectIdFromUrl();
+                    if (projectId) {
+                        projectAuthorId = await fetchProjectAuthorIdViaGraphQL(projectId);
+                        if (projectAuthorId) {
+                            _cachedAuthInfo.projectAuthorId = projectAuthorId;
+                        }
+                    }
+                }
+
+                console.log(`[EntrySync Inject] 🔍 Auth check: currentUserId='${currentUserId}', projectAuthorId='${projectAuthorId}'`);
+                if (currentUserId && projectAuthorId && currentUserId !== projectAuthorId) {
+                    console.log(`[EntrySync Inject] ℹ️ Initial data loaded. (Read-Only Mode: Workspace saves DISABLED because logged-in user '${currentUserId}' != project author '${projectAuthorId}')`);
+                } else {
+                    console.log('[EntrySync Inject] ✅ isInitialDataLoaded = true. Workspace saves now enabled.');
+                }
             }, 300);
         }
     }
@@ -1468,7 +1590,19 @@
                 inspection: inspection
             }, '*');
         }
+
+        // Auth info from content.js (top frame parses __NEXT_DATA__ and sends it here)
+        if (event.data.type === 'ENTRY_SYNC_AUTH_INFO') {
+            _cachedAuthInfo = {
+                currentUserId: event.data.currentUserId || null,
+                projectAuthorId: event.data.projectAuthorId || null
+            };
+            console.log(`[EntrySync Inject] 🔐 Auth info received: currentUserId='${_cachedAuthInfo.currentUserId}', projectAuthorId='${_cachedAuthInfo.projectAuthorId}'`);
+        }
     });
+
+    // Request auth info from content.js top frame (in case we're in iframe context)
+    window.postMessage({ type: 'ENTRY_SYNC_REQUEST_AUTH_INFO' }, '*');
 
     // Page Unload / Refresh / Close Handlers
     function handlePageUnload() {

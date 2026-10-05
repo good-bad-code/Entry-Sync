@@ -59,6 +59,67 @@
         return hasVars || hasLists;
     }
 
+    let cachedCurrentUserId = null;
+    let cachedProjectAuthorId = null;
+
+    async function fetchProjectAuthorId(roomId) {
+        if (!roomId || roomId === 'new') return null;
+        try {
+            // Step 1: Fetch current page HTML to extract CSRF token
+            // (_csrf cookie is HttpOnly so not accessible via document.cookie)
+            let csrfToken = '';
+            try {
+                const htmlRes = await fetch(window.location.href, { credentials: 'include' });
+                if (htmlRes.ok) {
+                    const html = await htmlRes.text();
+                    const m = html.match(/csrfToken["']?\s*[:=]\s*["']([^"']+)["']/i);
+                    if (m) csrfToken = m[1];
+                }
+            } catch (e) {}
+
+            // Step 2: POST to GraphQL with CSRF token
+            const res = await fetch('https://playentry.org/graphql', {
+                method: 'POST',
+                credentials: 'include',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'csrf-token': csrfToken,
+                    'x-csrf-token': csrfToken
+                },
+                body: JSON.stringify({
+                    query: `query SELECT_PROJECT($id: ID!) { project(id: $id) { id user { id } } }`,
+                    variables: { id: roomId }
+                })
+            });
+            if (res.ok) {
+                const data = await res.json();
+                return data?.data?.project?.user?.id || null;
+            }
+        } catch (e) {}
+        return null;
+    }
+
+    async function checkIsAuthorAuthorized(roomId, eventData) {
+        const currentUserId = eventData?.currentUserId || cachedCurrentUserId;
+        let authorId = eventData?.projectAuthorId || cachedProjectAuthorId;
+
+        if (currentUserId) cachedCurrentUserId = currentUserId;
+
+        if (!authorId && roomId) {
+            authorId = await fetchProjectAuthorId(roomId);
+            if (authorId) cachedProjectAuthorId = authorId;
+        }
+
+        if (currentUserId && authorId) {
+            const isMatch = (currentUserId === authorId);
+            if (!isMatch) {
+                console.log(`[EntrySync Content] 🛡️ Save blocked: Logged-in user (${currentUserId}) != Project Author (${authorId})`);
+            }
+            return isMatch;
+        }
+        return true;
+    }
+
     // 1. Extract Unique Entry ID
     function extractEntryId() {
         // Method A: Check iframe src matching /iframe/고유넘버
@@ -107,12 +168,61 @@
         }
     }
 
+    // Helper: Parse current user ID and project author ID from __NEXT_DATA__ (top frame only)
+    function parseAuthInfoFromPage() {
+        try {
+            const el = document.getElementById('__NEXT_DATA__');
+            if (!el) return { currentUserId: null, projectAuthorId: null };
+            const nextData = JSON.parse(el.textContent);
+            const pageProps = nextData?.props?.pageProps || {};
+
+            // Current logged-in user
+            const commonUser = pageProps?.ipaddressBanned?.initialState?.common?.user
+                            || pageProps?.initialState?.common?.user
+                            || nextData?.props?.initialState?.common?.user
+                            || null;
+            const currentUserId = commonUser ? (commonUser._id || commonUser.id || null) : null;
+
+            // Project author ID
+            const project = pageProps?.project || pageProps?.initialState?.workspace?.project || null;
+            const pUser = project?.user || null;
+            const projectAuthorId = pUser ? (typeof pUser === 'object' ? (pUser._id || pUser.id || null) : pUser) : null;
+
+            return { currentUserId, projectAuthorId };
+        } catch (e) {
+            return { currentUserId: null, projectAuthorId: null };
+        }
+    }
+
+    async function broadcastAuthInfo() {
+        if (!isTopFrame) return;
+        const { currentUserId, projectAuthorId: parsedAuthorId } = parseAuthInfoFromPage();
+
+        // If projectAuthorId not in __NEXT_DATA__, fetch from PlayEntry GraphQL
+        let projectAuthorId = parsedAuthorId;
+        if (!projectAuthorId) {
+            const roomId = currentRoomId || extractEntryId();
+            if (roomId && roomId !== 'new') {
+                projectAuthorId = await fetchProjectAuthorId(roomId);
+                if (projectAuthorId) cachedProjectAuthorId = projectAuthorId;
+            }
+        }
+
+        broadcastToFrames({
+            type: 'ENTRY_SYNC_AUTH_INFO',
+            currentUserId,
+            projectAuthorId
+        });
+    }
+
     // 2. Inject inject.js into page context
     function injectScript() {
         const script = document.createElement('script');
         script.src = chrome.runtime.getURL('inject.js');
         script.onload = function () {
             this.remove();
+            // Send auth info to inject.js as soon as it loads (async - fetches GraphQL if needed)
+            broadcastAuthInfo();
         };
         (document.head || document.documentElement).appendChild(script);
     }
@@ -355,6 +465,7 @@
                 try {
                     ws.send(JSON.stringify({
                         type: 'SAVE_DATA_ONLY',
+                        userId: event.data?.currentUserId || cachedCurrentUserId || null,
                         roomId: currentRoomId,
                         payload: event.data.dataOnlySnapshot || null,
                         syncData: event.data.syncDataSnapshot || null
@@ -380,6 +491,7 @@
                 try {
                     ws.send(JSON.stringify({
                         type: 'SAVE_DATA_ONLY',
+                        userId: event.data?.currentUserId || cachedCurrentUserId || null,
                         roomId: currentRoomId,
                         payload: event.data.dataOnlySnapshot,
                         syncData: event.data.syncDataSnapshot || null
@@ -417,6 +529,11 @@
                     array: event.data.array
                 }));
             }
+        }
+
+        // inject.js requesting auth info (runs in iframe, can't access __NEXT_DATA__ directly)
+        if (event.data.type === 'ENTRY_SYNC_REQUEST_AUTH_INFO') {
+            broadcastAuthInfo();
         }
 
         // Inspection Response from inject.js
