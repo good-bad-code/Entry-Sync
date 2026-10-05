@@ -27,6 +27,7 @@
     let isHooked = false;
     let latestDataOnly = { variables: {}, lists: {} }; // Tracks ?? variable state
     let latestSyncData = { variables: {}, lists: {} }; // Tracks ?! variable state
+    let frozenDataOnly = null; // Snapshot of latestDataOnly frozen on 'beforeStop' (BEFORE Entry's loadSnapshot corrupts it)
     let frozenSyncData = null; // Snapshot of latestSyncData frozen on 'beforeStop' (BEFORE Entry's loadSnapshot corrupts it)
 
     // ===== Prefix Helpers =====
@@ -869,6 +870,9 @@
                             const val = v.getValue ? v.getValue() : (v.value_ !== undefined ? v.value_ : (v.originValue_ !== undefined ? v.originValue_ : v.value));
                             if (val !== undefined && val !== null) {
                                 snapshot.variables[name] = val;
+                                if (!frozenDataOnly && !isGameStopping) {
+                                    latestDataOnly.variables[name] = val;
+                                }
                             }
                         }
                     });
@@ -884,23 +888,32 @@
                                 ? rawArr.map(item => (typeof item === 'object' && item !== null && 'data' in item) ? item.data : item)
                                 : [];
                             snapshot.lists[name] = arr;
+                            if (!frozenDataOnly && !isGameStopping) {
+                                latestDataOnly.lists[name] = arr;
+                            }
                         }
                     });
                 }
             }
 
-            // Step 2: In-memory buffers ALWAYS have highest priority because they are untouched by Entry's internal resets
-            Object.entries(latestDataOnly.variables).forEach(([name, val]) => {
+            // Step 2: In-memory buffers override live Entry values
+            // frozenDataOnly (captured on 'beforeStop' BEFORE loadSnapshot runs) has HIGHEST priority.
+            // latestDataOnly is used as fallback if frozenDataOnly is not available.
+            const dataBuffer = frozenDataOnly || latestDataOnly;
+            Object.entries(dataBuffer.variables).forEach(([name, val]) => {
                 if (val !== undefined && val !== null) {
                     snapshot.variables[name] = val;
                 }
             });
-            Object.entries(latestDataOnly.lists).forEach(([name, arr]) => {
+            Object.entries(dataBuffer.lists).forEach(([name, arr]) => {
                 if (Array.isArray(arr)) {
                     snapshot.lists[name] = arr;
                 }
             });
 
+            if (frozenDataOnly) {
+                console.log('[EntrySync Inject] ❄️ captureDataOnlySnapshot: using frozenDataOnly (protected from loadSnapshot corruption)');
+            }
             console.log(`[EntrySync Inject] 📸 ?? Data Only Snapshot captured:`, snapshot);
         } catch (e) {
             console.error('[EntrySync Inject] Error capturing data snapshot:', e);
@@ -1039,6 +1052,7 @@
             isStartingUp = true;      // Blocks local changes from broadcasting until Firebase data is applied
             stopEventSent = false;
             statusVarHooked = false;
+            frozenDataOnly = null;    // Clear frozen snapshot from previous stop
             frozenSyncData = null;    // Clear frozen snapshot from previous stop
 
             setupSyncHooks();
@@ -1072,7 +1086,7 @@
             console.log('[EntrySync Inject] ⏹️ Entry Engine STOP Event Detected!');
 
             // Capture snapshots BEFORE Entry resets them
-            // Note: frozenSyncData (captured on 'beforeStop') takes priority in captureSyncDataSnapshot
+            // Note: frozenDataOnly & frozenSyncData (captured on 'beforeStop') take priority in capture snapshots
             const dataOnlySnapshot = captureDataOnlySnapshot();
             const syncDataSnapshot = captureSyncDataSnapshot();
 
@@ -1085,8 +1099,9 @@
                 syncDataSnapshot: syncDataSnapshot
             }, '*');
 
-            // Clear frozenSyncData & release isGameStopping lock after 1500ms delay to prevent reset echoes
+            // Clear frozen snapshots & release isGameStopping lock after 1500ms delay to prevent reset echoes
             setTimeout(function () {
+                frozenDataOnly = null;
                 frozenSyncData = null;
                 isGameStopping = false;
             }, 1500);
@@ -1100,11 +1115,15 @@
                 try {
                     window.Entry.addEventListener('run', onGameRun);
                     window.Entry.addEventListener('stop', onGameStop);
-                    // 'beforeStop' fires BEFORE Entry's loadSnapshot() — freeze latestSyncData here!
-                    // This is critical: loadSnapshot() triggers originArray_ setter → notifyListChange()
-                    // which would overwrite latestSyncData with stale snapshot values (10 items),
-                    // corrupting the capture BEFORE onGameStop() fires.
+                    // 'beforeStop' fires BEFORE Entry's loadSnapshot() — freeze latestDataOnly & latestSyncData here!
+                    // This is critical: loadSnapshot() triggers setters which would overwrite buffer values
+                    // with stale project initial values, corrupting the capture BEFORE onGameStop() fires.
                     window.Entry.addEventListener('beforeStop', function () {
+                        isGameStopping = true;
+                        if (!frozenDataOnly && !stopEventSent) {
+                            frozenDataOnly = JSON.parse(JSON.stringify(latestDataOnly));
+                            console.log('[EntrySync Inject] ❄️ latestDataOnly frozen on beforeStop (before loadSnapshot):', frozenDataOnly);
+                        }
                         if (!frozenSyncData && !stopEventSent) {
                             frozenSyncData = JSON.parse(JSON.stringify(latestSyncData));
                             console.log('[EntrySync Inject] ❄️ latestSyncData frozen on beforeStop (before loadSnapshot):', frozenSyncData);
@@ -1277,28 +1296,55 @@
                     // to prevent Entry from showing stale/default project items in the stopped state!
                     try {
                         const vc = window.Entry && window.Entry.variableContainer;
-                        if (vc && vc.lists_) {
-                            const lists = Array.isArray(vc.lists_) ? vc.lists_ : Object.values(vc.lists_);
-                            lists.forEach(l => {
-                                const name = l.name_ || l.name;
-                                if (isSyncDataTarget(name) && latestSyncData.lists[name]) {
-                                    const cleanArr = latestSyncData.lists[name];
-                                    const arr = cleanArr.map(item => ({ data: item }));
-                                    l.array_ = arr;
-                                    l.array = arr;
-                                    l.originArray_ = JSON.parse(JSON.stringify(arr));
-                                    updateTargetSnapshot(l, arr);
-                                    ensureListRendered(l);
-                                } else if (isDataOnlyTarget(name) && latestDataOnly.lists[name]) {
-                                    const cleanArr = latestDataOnly.lists[name];
-                                    const arr = cleanArr.map(item => ({ data: item }));
-                                    l.array_ = arr;
-                                    l.array = arr;
-                                    l.originArray_ = JSON.parse(JSON.stringify(arr));
-                                    updateTargetSnapshot(l, arr);
-                                    ensureListRendered(l);
-                                }
-                            });
+                        if (vc) {
+                            // 1. Restore Variables
+                            if (vc.variables_) {
+                                const vars = Array.isArray(vc.variables_) ? vc.variables_ : Object.values(vc.variables_);
+                                vars.forEach(v => {
+                                    const name = v.name_ || v.name;
+                                    let targetVal = undefined;
+                                    if (isSyncDataTarget(name) && latestSyncData.variables[name] !== undefined) {
+                                        targetVal = latestSyncData.variables[name];
+                                    } else if (isDataOnlyTarget(name) && latestDataOnly.variables[name] !== undefined) {
+                                        targetVal = latestDataOnly.variables[name];
+                                    }
+                                    if (targetVal !== undefined) {
+                                        v.value_ = targetVal;
+                                        v.value = targetVal;
+                                        if (typeof v.setOriginValue === 'function') {
+                                            v.setOriginValue(targetVal);
+                                        } else {
+                                            v.originValue_ = targetVal;
+                                        }
+                                        if (v.snapshot_) {
+                                            v.snapshot_.value = targetVal;
+                                        }
+                                        if (typeof v.updateView === 'function') v.updateView();
+                                    }
+                                });
+                            }
+
+                            // 2. Restore Lists
+                            if (vc.lists_) {
+                                const lists = Array.isArray(vc.lists_) ? vc.lists_ : Object.values(vc.lists_);
+                                lists.forEach(l => {
+                                    const name = l.name_ || l.name;
+                                    let cleanArr = undefined;
+                                    if (isSyncDataTarget(name) && latestSyncData.lists[name]) {
+                                        cleanArr = latestSyncData.lists[name];
+                                    } else if (isDataOnlyTarget(name) && latestDataOnly.lists[name]) {
+                                        cleanArr = latestDataOnly.lists[name];
+                                    }
+                                    if (cleanArr) {
+                                        const arr = cleanArr.map(item => ({ data: item }));
+                                        l.array_ = arr;
+                                        l.array = arr;
+                                        l.originArray_ = JSON.parse(JSON.stringify(arr));
+                                        updateTargetSnapshot(l, arr);
+                                        ensureListRendered(l);
+                                    }
+                                });
+                            }
                         }
                     } catch (e) {}
 
