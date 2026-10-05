@@ -51,6 +51,14 @@
         return /^[a-fA-F0-9]{24}$/.test(id) || /^[a-zA-Z0-9_-]{12,}$/.test(id);
     }
 
+    // Helper to verify if snapshot object actually contains persistent variables/lists
+    function hasSnapshotData(snapshot) {
+        if (!snapshot || typeof snapshot !== 'object') return false;
+        const hasVars = snapshot.variables && Object.keys(snapshot.variables).length > 0;
+        const hasLists = snapshot.lists && Object.keys(snapshot.lists).length > 0;
+        return hasVars || hasLists;
+    }
+
     // 1. Extract Unique Entry ID
     function extractEntryId() {
         // Method A: Check iframe src matching /iframe/고유넘버
@@ -341,7 +349,8 @@
             }
 
             // Save ?? Data Only / ?! Sync Data snapshot if available
-            if (currentRoomId && currentRoomId !== 'new' && (event.data.dataOnlySnapshot || event.data.syncDataSnapshot) && ws && ws.readyState === WebSocket.OPEN) {
+            const hasDataToSave = hasSnapshotData(event.data.dataOnlySnapshot) || hasSnapshotData(event.data.syncDataSnapshot);
+            if (currentRoomId && currentRoomId !== 'new' && hasDataToSave && ws && ws.readyState === WebSocket.OPEN) {
                 console.log(`[EntrySync Content] 💾 Sending snapshot save request to Cloudflare (roomId: ${currentRoomId})...`, event.data);
                 try {
                     ws.send(JSON.stringify({
@@ -366,7 +375,8 @@
             if (!currentRoomId) {
                 currentRoomId = extractEntryId();
             }
-            if (currentRoomId && currentRoomId !== 'new' && event.data.dataOnlySnapshot && ws && ws.readyState === WebSocket.OPEN) {
+            const hasUnloadDataToSave = hasSnapshotData(event.data.dataOnlySnapshot) || hasSnapshotData(event.data.syncDataSnapshot);
+            if (currentRoomId && currentRoomId !== 'new' && hasUnloadDataToSave && ws && ws.readyState === WebSocket.OPEN) {
                 try {
                     ws.send(JSON.stringify({
                         type: 'SAVE_DATA_ONLY',
