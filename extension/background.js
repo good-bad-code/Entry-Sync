@@ -1,26 +1,50 @@
 /**
  * Entry Sync - Background Service Worker
- * Handles extension update events and opens the update notification page exactly once per version update.
+ * Opens the update notification page ONLY when Chrome is launched (onStartup),
+ * preventing unexpected popups while the user is actively working.
  */
+
+// Helper to check and open pending update page on startup
+async function checkAndOpenUpdatePage() {
+  try {
+    const currentVersion = chrome.runtime.getManifest().version;
+    const storageKey = `seen_update_page_${currentVersion}`;
+    const result = await chrome.storage.local.get([storageKey, 'pending_update_version']);
+
+    // Check if there is a pending update or if current version update page hasn't been seen yet
+    if (!result[storageKey] && result.pending_update_version === currentVersion) {
+      await chrome.storage.local.set({ [storageKey]: true });
+      await chrome.storage.local.remove('pending_update_version');
+
+      chrome.tabs.create({
+        url: 'https://entry-sync-site.pages.dev/update'
+      });
+    }
+  } catch (err) {
+    console.error('[Entry Sync Background] Error checking update page on startup:', err);
+  }
+}
+
+// 1. When extension is updated or installed in background:
+// Do NOT open tab immediately during active session. Just record pending version.
 chrome.runtime.onInstalled.addListener(async (details) => {
   if (details.reason === 'update' || details.reason === 'install') {
     const currentVersion = chrome.runtime.getManifest().version;
     const storageKey = `seen_update_page_${currentVersion}`;
 
     try {
-      // Check if update page has already been displayed for this version
       const result = await chrome.storage.local.get(storageKey);
       if (!result[storageKey]) {
-        // Mark as shown for this version
-        await chrome.storage.local.set({ [storageKey]: true });
-
-        // Open official update notification page (/update)
-        chrome.tabs.create({
-          url: 'https://entry-sync-site.pages.dev/update'
-        });
+        // Mark pending so onStartup will open it next time Chrome is opened
+        await chrome.storage.local.set({ pending_update_version: currentVersion });
       }
     } catch (err) {
-      console.error('[Entry Sync Background] Error handling onInstalled event:', err);
+      console.error('[Entry Sync Background] Error in onInstalled handler:', err);
     }
   }
+});
+
+// 2. When Chrome browser starts / is opened:
+chrome.runtime.onStartup.addListener(() => {
+  checkAndOpenUpdatePage();
 });
