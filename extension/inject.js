@@ -62,16 +62,29 @@
         try {
             let href = '';
             try { href = window.location.href; } catch (e) {}
-            if (!href || !href.includes('/ws/')) {
+            if (!href || (!href.includes('/ws/') && !href.includes('/project/') && !href.includes('/iframe/'))) {
                 try { href = window.top.location.href; } catch (e) {}
             }
-            const match = href.match(/\/ws\/([a-fA-F0-9a-zA-Z_-]+)/);
-            const result = match ? match[1] : null;
+            const match = href.match(/\/(ws|project|iframe)\/([a-fA-F0-9a-zA-Z_-]+)/);
+            const result = match ? match[2] : null;
             console.log(`[EntrySync Inject] 🔍 extractProjectIdFromUrl: href='${href}', result='${result}'`);
             return result;
         } catch (e) {
             console.warn('[EntrySync Inject] extractProjectIdFromUrl error:', e);
             return null;
+        }
+    }
+
+    function isWorkspacePage() {
+        try {
+            let href = '';
+            try { href = window.location.href; } catch (e) {}
+            if (!href || (!href.includes('/ws/') && !href.includes('/project/') && !href.includes('/iframe/'))) {
+                try { href = window.top.location.href; } catch (e) {}
+            }
+            return href.includes('/ws/');
+        } catch (e) {
+            return false;
         }
     }
 
@@ -200,20 +213,22 @@
             console.log('[EntrySync Inject] ⏳ Skipping triggerWorkspaceSave (initial data not loaded yet)');
             return;
         }
+        const isWs = isWorkspacePage();
         const { currentUserId, projectAuthorId } = getUserAndAuthorInfo();
-        if (currentUserId && projectAuthorId && currentUserId !== projectAuthorId) {
-            console.log(`[EntrySync Inject] 🛡️ Skipping triggerWorkspaceSave: Logged-in user (${currentUserId}) != Project Author (${projectAuthorId})`);
+        if (isWs && currentUserId && projectAuthorId && currentUserId !== projectAuthorId) {
+            console.log(`[EntrySync Inject] 🛡️ Skipping triggerWorkspaceSave: Logged-in user (${currentUserId}) != Project Author (${projectAuthorId}) on workspace page`);
             return;
         }
         if (workspaceSaveDebounceTimer) clearTimeout(workspaceSaveDebounceTimer);
         workspaceSaveDebounceTimer = setTimeout(() => {
             const dataOnlySnapshot = captureDataOnlySnapshot();
             const syncDataSnapshot = captureSyncDataSnapshot();
-            console.log('[EntrySync Inject] 💾 triggerWorkspaceSave dispatched:', { dataOnly: dataOnlySnapshot, syncData: syncDataSnapshot });
+            console.log('[EntrySync Inject] 💾 triggerWorkspaceSave dispatched:', { dataOnly: dataOnlySnapshot, syncData: syncDataSnapshot, isWorkspacePage: isWs });
             window.postMessage({
                 type: 'ENTRY_SYNC_SAVE_DATA_NOW',
                 currentUserId: currentUserId,
                 projectAuthorId: projectAuthorId,
+                isWorkspacePage: isWs,
                 dataOnlySnapshot: dataOnlySnapshot,
                 syncDataSnapshot: syncDataSnapshot
             }, '*');
@@ -828,8 +843,9 @@
                 }
 
                 console.log(`[EntrySync Inject] 🔍 Auth check: currentUserId='${currentUserId}', projectAuthorId='${projectAuthorId}'`);
-                if (currentUserId && projectAuthorId && currentUserId !== projectAuthorId) {
-                    console.log(`[EntrySync Inject] ℹ️ Initial data loaded. (Read-Only Mode: Workspace saves DISABLED because logged-in user '${currentUserId}' != project author '${projectAuthorId}')`);
+                const isWs = isWorkspacePage();
+                if (isWs && currentUserId && projectAuthorId && currentUserId !== projectAuthorId) {
+                    console.log(`[EntrySync Inject] ℹ️ Initial data loaded. (Read-Only Mode: Workspace block saves DISABLED because logged-in user '${currentUserId}' != project author '${projectAuthorId}')`);
                 } else {
                     console.log('[EntrySync Inject] ✅ isInitialDataLoaded = true. Workspace saves now enabled.');
                 }
@@ -1062,6 +1078,9 @@
 
             window.postMessage({
                 type: 'ENTRY_SYNC_ENGINE_STOP',
+                currentUserId: getUserAndAuthorInfo().currentUserId,
+                projectAuthorId: getUserAndAuthorInfo().projectAuthorId,
+                isWorkspacePage: isWorkspacePage(),
                 dataOnlySnapshot: dataOnlySnapshot,
                 syncDataSnapshot: syncDataSnapshot
             }, '*');
@@ -1212,6 +1231,9 @@
                         const syncDataSnapshot = captureSyncDataSnapshot();
                         window.postMessage({
                             type: 'ENTRY_SYNC_SAVE_DATA_NOW',
+                            currentUserId: getUserAndAuthorInfo().currentUserId,
+                            projectAuthorId: getUserAndAuthorInfo().projectAuthorId,
+                            isWorkspacePage: isWorkspacePage(),
                             dataOnlySnapshot: dataOnlySnapshot,
                             syncDataSnapshot: syncDataSnapshot
                         }, '*');
@@ -1504,6 +1526,9 @@
                         tessFlush();
                         window.postMessage({
                             type: 'ENTRY_SYNC_ENGINE_STOP',
+                            currentUserId: getUserAndAuthorInfo().currentUserId,
+                            projectAuthorId: getUserAndAuthorInfo().projectAuthorId,
+                            isWorkspacePage: isWorkspacePage(),
                             dataOnlySnapshot: tessSnapshot(isDataOnlyTarget),
                             syncDataSnapshot: tessSnapshot(isSyncDataTarget)
                         }, '*');
@@ -1606,15 +1631,25 @@
 
     // Page Unload / Refresh / Close Handlers
     function handlePageUnload() {
+        const { currentUserId, projectAuthorId } = getUserAndAuthorInfo();
+        const isWs = isWorkspacePage();
         if (window.Entry && window.Entry.engine && window.Entry.engine.isState && window.Entry.engine.isState('run')) {
             const dataOnlySnapshot = captureDataOnlySnapshot();
+            const syncDataSnapshot = captureSyncDataSnapshot();
             window.postMessage({
                 type: 'ENTRY_SYNC_PAGE_UNLOAD',
-                dataOnlySnapshot: dataOnlySnapshot
+                currentUserId: currentUserId,
+                projectAuthorId: projectAuthorId,
+                isWorkspacePage: isWs,
+                dataOnlySnapshot: dataOnlySnapshot,
+                syncDataSnapshot: syncDataSnapshot
             }, '*');
         } else if (tess.vm && tess.vm.state !== 'stop') {
             window.postMessage({
                 type: 'ENTRY_SYNC_PAGE_UNLOAD',
+                currentUserId: currentUserId,
+                projectAuthorId: projectAuthorId,
+                isWorkspacePage: isWs,
                 dataOnlySnapshot: tessSnapshot(isDataOnlyTarget),
                 syncDataSnapshot: tessSnapshot(isSyncDataTarget)
             }, '*');
@@ -1667,6 +1702,9 @@
                         const syncDataSnapshot = captureSyncDataSnapshot();
                         window.postMessage({
                             type: 'ENTRY_SYNC_ENGINE_STOP',
+                            currentUserId: getUserAndAuthorInfo().currentUserId,
+                            projectAuthorId: getUserAndAuthorInfo().projectAuthorId,
+                            isWorkspacePage: isWorkspacePage(),
                             dataOnlySnapshot: dataOnlySnapshot,
                             syncDataSnapshot: syncDataSnapshot
                         }, '*');

@@ -100,6 +100,9 @@
     }
 
     async function checkIsAuthorAuthorized(roomId, eventData) {
+        const isWs = eventData?.isWorkspacePage !== undefined ? eventData.isWorkspacePage : window.location.href.includes('/ws/');
+        if (!isWs) return true; // Play pages (/project/) allow data saves for all users
+
         const currentUserId = eventData?.currentUserId || cachedCurrentUserId;
         let authorId = eventData?.projectAuthorId || cachedProjectAuthorId;
 
@@ -113,7 +116,7 @@
         if (currentUserId && authorId) {
             const isMatch = (currentUserId === authorId);
             if (!isMatch) {
-                console.log(`[EntrySync Content] 🛡️ Save blocked: Logged-in user (${currentUserId}) != Project Author (${authorId})`);
+                console.log(`[EntrySync Content] 🛡️ Workspace save blocked: Logged-in user (${currentUserId}) != Project Author (${authorId})`);
             }
             return isMatch;
         }
@@ -461,11 +464,13 @@
             // Save ?? Data Only / ?! Sync Data snapshot if available
             const hasDataToSave = hasSnapshotData(event.data.dataOnlySnapshot) || hasSnapshotData(event.data.syncDataSnapshot);
             if (currentRoomId && currentRoomId !== 'new' && hasDataToSave && ws && ws.readyState === WebSocket.OPEN) {
-                console.log(`[EntrySync Content] 💾 Sending snapshot save request to Cloudflare (roomId: ${currentRoomId})...`, event.data);
+                const isWs = event.data?.isWorkspacePage !== undefined ? event.data.isWorkspacePage : window.location.href.includes('/ws/');
+                console.log(`[EntrySync Content] 💾 Sending snapshot save request to Cloudflare (roomId: ${currentRoomId}, isWorkspacePage: ${isWs})...`, event.data);
                 try {
                     ws.send(JSON.stringify({
                         type: 'SAVE_DATA_ONLY',
                         userId: event.data?.currentUserId || cachedCurrentUserId || null,
+                        isWorkspacePage: isWs,
                         roomId: currentRoomId,
                         payload: event.data.dataOnlySnapshot || null,
                         syncData: event.data.syncDataSnapshot || null
@@ -488,10 +493,12 @@
             }
             const hasUnloadDataToSave = hasSnapshotData(event.data.dataOnlySnapshot) || hasSnapshotData(event.data.syncDataSnapshot);
             if (currentRoomId && currentRoomId !== 'new' && hasUnloadDataToSave && ws && ws.readyState === WebSocket.OPEN) {
+                const isWs = event.data?.isWorkspacePage !== undefined ? event.data.isWorkspacePage : window.location.href.includes('/ws/');
                 try {
                     ws.send(JSON.stringify({
                         type: 'SAVE_DATA_ONLY',
                         userId: event.data?.currentUserId || cachedCurrentUserId || null,
+                        isWorkspacePage: isWs,
                         roomId: currentRoomId,
                         payload: event.data.dataOnlySnapshot,
                         syncData: event.data.syncDataSnapshot || null
