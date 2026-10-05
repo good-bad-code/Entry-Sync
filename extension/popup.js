@@ -12,6 +12,7 @@ const newProjectToast = $('newProjectToast');
 
 // ===== State =====
 let currentProjectId = null;
+let currentIsEntryPage = false;
 let toastTimer = null;
 
 function showNewProjectToast() {
@@ -88,10 +89,11 @@ function updateServerLabel(serverUrl) {
 }
 
 // ===== Update Recognition =====
-function updateRecognition(msg) {
+function updateRecognition(msg = {}) {
   const container = document.getElementById('recognitionStatus');
   if (!container) return;
 
+  const isEntryPage = msg.isEntryPage !== undefined ? msg.isEntryPage : currentIsEntryPage;
   const vars = msg.vars || {};
   const lists = msg.lists || [];
 
@@ -99,9 +101,9 @@ function updateRecognition(msg) {
   let subtitle;
   let subtitleClass;
 
-  if (!currentProjectId) {
+  if (!isEntryPage || !currentProjectId) {
     iconClass = 'gray';
-    subtitle = '-';
+    subtitle = '대기 중';
     subtitleClass = 'gray';
   } else if (!msg.entryReady) {
     iconClass = 'red';
@@ -129,7 +131,7 @@ function updateRecognition(msg) {
   let badgeText;
   const hasSyncVars = msg.hasSyncVars;
 
-  if (!currentProjectId) {
+  if (!isEntryPage || !currentProjectId) {
     badgeClass = 'gray';
     badgeText = '-';
   } else if (hasSyncVars === false) {
@@ -171,9 +173,13 @@ document.addEventListener('DOMContentLoaded', () => {
     if (!tab || !tab.url) {
       if (projectIdLabel) projectIdLabel.textContent = '—';
       setStatus('waiting');
+      updateRecognition({ isEntryPage: false });
       chrome.runtime.sendMessage({ type: 'POPUP_OPENED' }).catch(() => {});
       return;
     }
+
+    const isEntryPage = tab.url.includes('playentry.org') || tab.url.includes('space.playentry.org');
+    currentIsEntryPage = isEntryPage;
 
     const projectId = extractProjectId(tab.url);
     currentProjectId = projectId;
@@ -181,6 +187,12 @@ document.addEventListener('DOMContentLoaded', () => {
       projectIdLabel.textContent = projectId;
     } else if (projectIdLabel) {
       projectIdLabel.textContent = '—';
+    }
+
+    if (!isEntryPage || !projectId) {
+      setStatus('waiting');
+      updateRecognition({ isEntryPage: isEntryPage });
+      return;
     }
 
     // Request status directly from content script on the active tab
