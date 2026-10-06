@@ -12,7 +12,7 @@ Entry Sync에서 보안 취약점을 발견했다면 **공개 GitHub Issue, Pull
 
 보안 취약점은 아래 이메일을 통해 비공개로 신고해주세요.
 
-**Email:** syho2058@gmail.com
+**Email:** learn.code.ing.ing@gmail.com
 
 가능하다면 다음 정보를 함께 제공해주세요.
 

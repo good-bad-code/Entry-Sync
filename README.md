@@ -215,7 +215,7 @@ Entry Sync는 오픈소스 프로젝트이며 커뮤니티의 피드백과 기�
 ### 문의 및 피드백
 
 - 🐛 버그 제보 및 기능 제안: [GitHub Issues](../../issues)
-- 📧 개발팀 문의: `syho2058@gmail.com`
+- 📧 개발팀 문의: `learn.code.ing.ing@gmail.com`
 - 🌐 공식 웹사이트: https://entry-sync-site.pages.dev/
 - 🔒 개인정보처리방침: [개인정보처리방침.md](개인정보처리방침.md)
 
