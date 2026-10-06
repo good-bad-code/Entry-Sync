@@ -1047,6 +1047,7 @@
                 return;
             }
             gameRunSetupDone = true;
+            lastKnownRunState = true;
             console.log('[EntrySync Inject] 🚀 Entry Engine RUN Event Detected!');
             isGameStopping = false;
             isStartingUp = true;      // Blocks local changes from broadcasting until Firebase data is applied
@@ -1082,6 +1083,7 @@
             }
             stopEventSent = true;
             gameRunSetupDone = false; // Allow next game cycle to run setup again
+            lastKnownRunState = false;
             isGameStopping = true;
             console.log('[EntrySync Inject] ⏹️ Entry Engine STOP Event Detected!');
 
@@ -1567,7 +1569,7 @@
             };
             const originalStop = vm.stop;
             vm.stop = function () {
-                if (this.state !== 'stop' && tess.vm === vm) {
+                if (tess.vm === vm) {
                     try {
                         tessFlush();
                         window.postMessage({

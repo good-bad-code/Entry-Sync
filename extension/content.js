@@ -125,32 +125,37 @@
 
     // 1. Extract Unique Entry ID
     function extractEntryId() {
-        // Method A: Check iframe src matching /iframe/고유넘버
-        const iframes = document.querySelectorAll('iframe');
-        for (const iframe of iframes) {
-            const src = iframe.getAttribute('src') || '';
-            const match = src.match(/\/iframe\/([a-zA-Z0-9_-]+)/);
-            if (match && match[1]) {
-                return match[1];
-            }
-        }
-
-        // Method B: URL pattern matching
+        // Method A: Check window.location.href (if in top frame or inside iframe)
         const currentUrl = window.location.href;
-        const wsMatch = currentUrl.match(/playentry\.org\/ws\/([a-zA-Z0-9_-]+)/);
-        if (wsMatch && wsMatch[1]) return wsMatch[1];
 
-        const projMatch = currentUrl.match(/playentry\.org\/project\/([a-zA-Z0-9_-]+)/);
-        if (projMatch && projMatch[1]) return projMatch[1];
-
-        const worldMatch = currentUrl.match(/space\.playentry\.org\/world\/([a-zA-Z0-9_-]+)/);
-        if (worldMatch && worldMatch[1]) return worldMatch[1];
+        const pathMatch = currentUrl.match(/\/(?:iframe|project|ws|world)\/([a-zA-Z0-9_-]+)/);
+        if (pathMatch && pathMatch[1] && isValidEntryId(pathMatch[1])) {
+            return pathMatch[1];
+        }
 
         try {
             const u = new URL(currentUrl);
-            const param = u.searchParams.get('project');
-            if (param) return param;
+            const param = u.searchParams.get('project') || u.searchParams.get('id');
+            if (param && isValidEntryId(param)) return param;
         } catch (e) {}
+
+        // Method B: Check all <iframe> elements in document (for World modals & embedded popups)
+        const iframes = document.querySelectorAll('iframe');
+        for (const iframe of iframes) {
+            const src = iframe.getAttribute('src') || iframe.src || iframe.getAttribute('data-src') || '';
+            if (!src) continue;
+
+            const match = src.match(/\/(?:iframe|project|ws|world)\/([a-zA-Z0-9_-]+)/);
+            if (match && match[1] && isValidEntryId(match[1])) {
+                return match[1];
+            }
+
+            try {
+                const u = new URL(src, window.location.href);
+                const param = u.searchParams.get('project') || u.searchParams.get('id');
+                if (param && isValidEntryId(param)) return param;
+            } catch (e) {}
+        }
 
         return null;
     }
@@ -250,6 +255,11 @@
             console.log(`[EntrySync Content] 🛑 Skipping WebSocket connect for roomId: '${roomId}'`);
             return;
         }
+        const isWorkspacePage = window.location.href.includes('/ws/');
+        if (!isWorkspacePage && !isGameRunning) {
+            console.log(`[EntrySync Content] ⏸️ Skipping WebSocket connect for roomId '${roomId}' because game is not running on play/world page.`);
+            return;
+        }
         if (ws && (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING)) {
             return;
         }
@@ -330,8 +340,7 @@
                     }
                 } catch (e) {}
 
-                // Auto-reconnect ONLY IF game is currently running OR user is in workspace edit page (/ws/)
-                // When game is stopped on play/view page, DO NOT continuously reconnect in a loop!
+                // Auto-reconnect ONLY IF game is currently running OR user is on workspace edit page (/ws/)
                 const isWorkspacePage = window.location.href.includes('/ws/');
                 if (currentRoomId && currentRoomId !== 'new' && !isIntentionalClose && (isGameRunning || isWorkspacePage)) {
                     setTimeout(() => {
@@ -361,7 +370,7 @@
             console.log('[EntrySync Content] Closing Cloudflare WebSocket connection...');
             try {
                 if (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING) {
-                    ws.close(1000, 'Page unloaded');
+                    ws.close(1000, 'Engine stopped');
                 }
             } catch (e) {}
             ws = null;
@@ -372,7 +381,10 @@
         currentRoomId = extractEntryId();
         if (currentRoomId && currentRoomId !== 'new') {
             console.log('[EntrySync Content] Target Entry Room ID extracted:', currentRoomId);
-            connectWebSocket(currentRoomId);
+            const isWorkspacePage = window.location.href.includes('/ws/');
+            if (isWorkspacePage || isGameRunning) {
+                connectWebSocket(currentRoomId);
+            }
             return;
         }
 
@@ -386,7 +398,10 @@
                 observer.disconnect();
                 clearInterval(retryInterval);
                 console.log('[EntrySync Content] (observer) Found Room ID:', currentRoomId);
-                connectWebSocket(currentRoomId);
+                const isWorkspacePage = window.location.href.includes('/ws/');
+                if (isWorkspacePage || isGameRunning) {
+                    connectWebSocket(currentRoomId);
+                }
             }
         });
 
@@ -402,7 +417,10 @@
                 observer.disconnect();
                 clearInterval(retryInterval);
                 console.log(`[EntrySync Content] (retry #${retryCount}) Found Room ID:`, currentRoomId);
-                connectWebSocket(currentRoomId);
+                const isWorkspacePage = window.location.href.includes('/ws/');
+                if (isWorkspacePage || isGameRunning) {
+                    connectWebSocket(currentRoomId);
+                }
             } else if (retryCount >= maxRetries) {
                 observer.disconnect();
                 clearInterval(retryInterval);
@@ -452,9 +470,12 @@
                 window.top.postMessage(event.data, '*');
                 return;
             }
+
+            const isWsPage = event.data?.isWorkspacePage !== undefined ? event.data.isWorkspacePage : window.location.href.includes('/ws/');
+
             if (event.data.type === 'ENTRY_SYNC_ENGINE_STOP') {
                 isGameRunning = false;
-                console.log('[EntrySync Content] ⏹️ Game stopped.');
+                console.log(`[EntrySync Content] ⏹️ Game stopped (isWorkspacePage: ${isWsPage}).`);
             }
 
             if (!currentRoomId) {
@@ -464,13 +485,12 @@
             // Save ?? Data Only / ?! Sync Data snapshot if available
             const hasDataToSave = hasSnapshotData(event.data.dataOnlySnapshot) || hasSnapshotData(event.data.syncDataSnapshot);
             if (currentRoomId && currentRoomId !== 'new' && hasDataToSave && ws && ws.readyState === WebSocket.OPEN) {
-                const isWs = event.data?.isWorkspacePage !== undefined ? event.data.isWorkspacePage : window.location.href.includes('/ws/');
-                console.log(`[EntrySync Content] 💾 Sending snapshot save request to Cloudflare (roomId: ${currentRoomId}, isWorkspacePage: ${isWs})...`, event.data);
+                console.log(`[EntrySync Content] 💾 Sending snapshot save request to Cloudflare (roomId: ${currentRoomId}, isWorkspacePage: ${isWsPage})...`, event.data);
                 try {
                     ws.send(JSON.stringify({
                         type: 'SAVE_DATA_ONLY',
                         userId: event.data?.currentUserId || cachedCurrentUserId || null,
-                        isWorkspacePage: isWs,
+                        isWorkspacePage: isWsPage,
                         roomId: currentRoomId,
                         payload: event.data.dataOnlySnapshot || null,
                         syncData: event.data.syncDataSnapshot || null
@@ -480,14 +500,16 @@
                 }
             }
 
-            // Disconnect WebSocket immediately on engine stop.
-            // Small delay (150ms) to ensure SAVE_DATA_ONLY message is flushed before close.
-            // On next engine run, connectWebSocket() will reconnect fresh.
+            // Disconnect WebSocket on engine stop ONLY IF NOT on workspace page (/ws/)
             if (event.data.type === 'ENTRY_SYNC_ENGINE_STOP') {
-                setTimeout(() => {
-                    console.log('[EntrySync Content] 🔌 Disconnecting WebSocket after game stop...');
-                    disconnectWebSocket();
-                }, 150);
+                if (!isWsPage) {
+                    setTimeout(() => {
+                        console.log('[EntrySync Content] 🔌 Disconnecting WebSocket after game stop on play/world page...');
+                        disconnectWebSocket();
+                    }, 30);
+                } else {
+                    console.log('[EntrySync Content] ℹ️ Workspace page (/ws/): Keeping WebSocket connected after game stop.');
+                }
             }
         }
 
