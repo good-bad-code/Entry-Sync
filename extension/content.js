@@ -479,6 +479,16 @@
                     console.error('[EntrySync Content] Error sending SAVE_DATA_ONLY:', e);
                 }
             }
+
+            // Disconnect WebSocket immediately on engine stop.
+            // Small delay (150ms) to ensure SAVE_DATA_ONLY message is flushed before close.
+            // On next engine run, connectWebSocket() will reconnect fresh.
+            if (event.data.type === 'ENTRY_SYNC_ENGINE_STOP') {
+                setTimeout(() => {
+                    console.log('[EntrySync Content] 🔌 Disconnecting WebSocket after game stop...');
+                    disconnectWebSocket();
+                }, 150);
+            }
         }
 
         // Page Unload
