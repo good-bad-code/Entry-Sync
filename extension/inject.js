@@ -14,6 +14,7 @@
     const PREFIX_SYNC_DATA = '?!';
 
     let isConnectedToCloudflare = false;
+    let statusBadgeEnabled = true;
     let isApplyingRemote = false; // Flag to prevent broadcast echo loop
     let isGameStopping = false;   // Flag to prevent broadcasting during stop/reset sequence
     let isStartingUp = false;     // Flag to protect initial remote state on run
@@ -1184,6 +1185,13 @@
             const badge = getOrCreateStatusBadge();
             if (!badge) return;
 
+            if (!statusBadgeEnabled) {
+                badge.style.setProperty('display', 'none', 'important');
+                return;
+            } else {
+                badge.style.removeProperty('display');
+            }
+
             const connected = isConnectedToCloudflare;
             const inspection = (!window.Entry && tess.vm) ? tessInspect() : inspectProjectVariables();
             const hasSync = !!(inspection && inspection.hasSyncVars);
@@ -1902,6 +1910,15 @@
                 type: 'RESP_ENTRY_VARS_INSPECTION',
                 inspection: inspection
             }, '*');
+            window.postMessage({ type: 'ENTRY_SYNC_REQUEST_CONFIG' }, '*');
+        }
+
+        // Config update from content.js
+        if (event.data.type === 'ENTRY_SYNC_CONFIG_UPDATE') {
+            if (event.data.status_badge_enabled !== undefined) {
+                statusBadgeEnabled = !!event.data.status_badge_enabled;
+                updateStatusBadge();
+            }
         }
 
         // Auth info from content.js (top frame parses __NEXT_DATA__ and sends it here)
@@ -1914,8 +1931,9 @@
         }
     });
 
-    // Request auth info from content.js top frame (in case we're in iframe context)
+    // Request auth info & config from content.js (in case we're in iframe context)
     window.postMessage({ type: 'ENTRY_SYNC_REQUEST_AUTH_INFO' }, '*');
+    window.postMessage({ type: 'ENTRY_SYNC_REQUEST_CONFIG' }, '*');
 
     // Page Unload / Refresh / Close Handlers
     function handlePageUnload() {

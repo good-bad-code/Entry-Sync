@@ -188,6 +188,33 @@
 
     const isTopFrame = window === window.top;
 
+    // Broadcast config updates (serverUrl, status_badge_enabled) to inject.js
+    function syncConfigToFrames() {
+        if (chrome && chrome.storage && chrome.storage.local) {
+            chrome.storage.local.get(['serverUrl', 'status_badge_enabled'], function (result) {
+                if (result && result.serverUrl) {
+                    cloudflareServerUrl = result.serverUrl;
+                }
+                const isBadgeEnabled = result.status_badge_enabled !== false;
+                broadcastToFrames({
+                    type: 'ENTRY_SYNC_CONFIG_UPDATE',
+                    status_badge_enabled: isBadgeEnabled
+                });
+            });
+        }
+    }
+
+    if (chrome && chrome.storage && chrome.storage.onChanged) {
+        chrome.storage.onChanged.addListener((changes, namespace) => {
+            if (namespace === 'local' && changes.status_badge_enabled) {
+                broadcastToFrames({
+                    type: 'ENTRY_SYNC_CONFIG_UPDATE',
+                    status_badge_enabled: changes.status_badge_enabled.newValue !== false
+                });
+            }
+        });
+    }
+
     // Load serverUrl from storage
     if (isTopFrame) {
         if (chrome && chrome.storage && chrome.storage.local) {
@@ -195,6 +222,7 @@
                 if (result && result.serverUrl) {
                     cloudflareServerUrl = result.serverUrl;
                 }
+                syncConfigToFrames();
                 initSync();
             });
         } else {
@@ -601,6 +629,11 @@
             broadcastAuthInfo();
         }
 
+        // inject.js requesting config info
+        if (event.data.type === 'ENTRY_SYNC_REQUEST_CONFIG') {
+            syncConfigToFrames();
+        }
+
         // Child frame status report relayed to top frame
         if (event.data.type === 'ENTRY_SYNC_FRAME_STATUS_REPORT') {
             if (event.data.roomId && isValidEntryId(event.data.roomId)) {
@@ -706,10 +739,20 @@
 
             if (request.type === 'POPUP_OPENED') {
                 broadcastToFrames({ type: 'REQ_ENTRY_VARS_INSPECTION' });
+                syncConfigToFrames();
+            }
+
+            if (request.type === 'ENTRY_SYNC_CONFIG_UPDATE') {
+                broadcastToFrames({
+                    type: 'ENTRY_SYNC_CONFIG_UPDATE',
+                    status_badge_enabled: request.status_badge_enabled !== false
+                });
             }
 
             return true;
         });
+    }
+
     // Periodically inspect World popup modals (#popupStyle) for newly opened projects
     setInterval(() => {
         const detectedId = extractEntryId();
@@ -722,3 +765,4 @@
     }, 1000);
 
 })();
+

@@ -16,6 +16,7 @@ const statusBarSettings = $('statusBarSettings');
 const mainView = $('mainView');
 const settingsView = $('settingsView');
 const toggleUpdateNotice = $('toggleUpdateNotice');
+const toggleStatusBadge = $('toggleStatusBadge');
 
 // ===== State =====
 let currentProjectId = null;
@@ -277,6 +278,28 @@ document.addEventListener('DOMContentLoaded', () => {
 
     toggleUpdateNotice.addEventListener('change', () => {
       chrome.storage.local.set({ update_notice_enabled: toggleUpdateNotice.checked });
+    });
+  }
+
+  if (toggleStatusBadge) {
+    chrome.storage.local.get('status_badge_enabled', (res) => {
+      const isEnabled = res.status_badge_enabled !== false; // Default ON
+      toggleStatusBadge.checked = isEnabled;
+    });
+
+    toggleStatusBadge.addEventListener('change', () => {
+      const isChecked = toggleStatusBadge.checked;
+      chrome.storage.local.set({ status_badge_enabled: isChecked });
+
+      // Notify active tab immediately
+      chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+        if (tabs[0]?.id) {
+          chrome.tabs.sendMessage(tabs[0].id, {
+            type: 'ENTRY_SYNC_CONFIG_UPDATE',
+            status_badge_enabled: isChecked
+          }).catch(() => {});
+        }
+      });
     });
   }
 

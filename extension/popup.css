@@ -171,6 +171,9 @@ body {
 }
 
 /* ===== Settings View Styling ===== */
+.mb-8 {
+  margin-bottom: 8px;
+}
 .settings-group-title {
   font-family: 'Inter', sans-serif;
   font-size: 11px;
