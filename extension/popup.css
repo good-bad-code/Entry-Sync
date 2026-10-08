@@ -59,6 +59,23 @@ body {
   padding: 10px 16px;
   background: #ffffff;
   border-bottom: 1px solid #c1c6d7;
+  min-height: 44px;
+}
+.status-bar-main,
+.status-bar-settings {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+}
+.status-bar-settings .status-left {
+  gap: 10px;
+}
+.status-title {
+  font-family: 'Inter', sans-serif;
+  font-size: 13px;
+  font-weight: 600;
+  color: #111c2d;
 }
 .status-left {
   display: flex;
@@ -96,6 +113,9 @@ body {
   gap: 5px;
 }
 .cf-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
   font-family: 'Inter', sans-serif;
   font-size: 10px;
   font-weight: 600;
@@ -106,6 +126,11 @@ body {
   border-radius: 4px;
   letter-spacing: 0.3px;
   flex-shrink: 0;
+}
+.cf-icon {
+  width: 14px;
+  height: 14px;
+  object-fit: contain;
 }
 .server-label {
   font-family: 'Inter', sans-serif;
@@ -119,6 +144,108 @@ body {
   letter-spacing: 0.3px;
   flex-shrink: 0;
 }
+
+/* ===== Icon Button ===== */
+.icon-btn {
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 4px;
+  border-radius: 6px;
+  color: #717786;
+  transition: all 0.15s ease;
+  line-height: 1;
+}
+.icon-btn:hover {
+  background: #edf2f7;
+  color: #0058bc;
+}
+.icon-btn:active {
+  transform: scale(0.92);
+}
+.icon-btn .material-symbols-outlined {
+  font-size: 18px;
+}
+
+/* ===== Settings View Styling ===== */
+.settings-group-title {
+  font-family: 'Inter', sans-serif;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: #717786;
+  margin-bottom: 10px;
+}
+.setting-item {
+  background: #ffffff;
+  border: 1px solid #c1c6d7;
+  border-radius: 8px;
+  padding: 12px 14px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+.setting-info {
+  display: flex;
+  flex-direction: column;
+}
+.setting-label {
+  font-family: 'Inter', sans-serif;
+  font-size: 13px;
+  font-weight: 500;
+  color: #111c2d;
+}
+
+/* ===== Toggle Switch ===== */
+.toggle-switch {
+  position: relative;
+  display: inline-block;
+  width: 40px;
+  height: 22px;
+  flex-shrink: 0;
+}
+.toggle-switch input {
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+.toggle-slider {
+  position: absolute;
+  cursor: pointer;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-color: #cbd5e1;
+  transition: background-color 0.2s ease;
+  border-radius: 22px;
+}
+.toggle-slider:before {
+  position: absolute;
+  content: "";
+  height: 16px;
+  width: 16px;
+  left: 3px;
+  bottom: 3px;
+  background-color: #ffffff;
+  transition: transform 0.2s ease;
+  border-radius: 50%;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+}
+.toggle-switch input:checked + .toggle-slider {
+  background-color: #0058bc;
+}
+.toggle-switch input:checked + .toggle-slider:before {
+  transform: translateX(18px);
+}
+.toggle-switch input:focus-visible + .toggle-slider {
+  box-shadow: 0 0 0 2px rgba(0, 88, 188, 0.3);
+}
+
 
 /* ===== Section Common ===== */
 .section {

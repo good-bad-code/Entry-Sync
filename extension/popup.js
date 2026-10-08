@@ -9,11 +9,32 @@ const statusText = $('statusText');
 const projectIdLabel = $('projectIdLabel');
 const serverLabel = $('serverLabel');
 const newProjectToast = $('newProjectToast');
+const btnSettings = $('btnSettings');
+const btnBack = $('btnBack');
+const statusBarMain = $('statusBarMain');
+const statusBarSettings = $('statusBarSettings');
+const mainView = $('mainView');
+const settingsView = $('settingsView');
+const toggleUpdateNotice = $('toggleUpdateNotice');
 
 // ===== State =====
 let currentProjectId = null;
 let currentIsEntryPage = false;
 let toastTimer = null;
+
+function showSettingsView() {
+  if (statusBarMain) statusBarMain.style.display = 'none';
+  if (statusBarSettings) statusBarSettings.style.display = 'flex';
+  if (mainView) mainView.style.display = 'none';
+  if (settingsView) settingsView.style.display = 'block';
+}
+
+function showMainView() {
+  if (statusBarSettings) statusBarSettings.style.display = 'none';
+  if (statusBarMain) statusBarMain.style.display = 'flex';
+  if (settingsView) settingsView.style.display = 'none';
+  if (mainView) mainView.style.display = 'block';
+}
 
 function showNewProjectToast() {
   if (!newProjectToast) return;
@@ -243,6 +264,22 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // Toast click-to-dismiss
   newProjectToast?.addEventListener('click', hideNewProjectToast);
+
+  // ===== Settings View Navigation =====
+  btnSettings?.addEventListener('click', showSettingsView);
+  btnBack?.addEventListener('click', showMainView);
+
+  // ===== Settings Storage Sync =====
+  if (toggleUpdateNotice) {
+    chrome.storage.local.get('update_notice_enabled', (res) => {
+      const isEnabled = res.update_notice_enabled !== false;
+      toggleUpdateNotice.checked = isEnabled;
+    });
+
+    toggleUpdateNotice.addEventListener('change', () => {
+      chrome.storage.local.set({ update_notice_enabled: toggleUpdateNotice.checked });
+    });
+  }
 
   // ===== Message Listener =====
   chrome.runtime.onMessage.addListener((message) => {

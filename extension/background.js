@@ -9,7 +9,12 @@ async function checkAndOpenUpdatePage() {
   try {
     const currentVersion = chrome.runtime.getManifest().version;
     const storageKey = `seen_update_page_${currentVersion}`;
-    const result = await chrome.storage.local.get([storageKey, 'pending_update_version']);
+    const result = await chrome.storage.local.get([storageKey, 'pending_update_version', 'update_notice_enabled']);
+
+    // Check if update notification page option is turned off by user
+    if (result.update_notice_enabled === false) {
+      return;
+    }
 
     // Check if there is a pending update or if current version update page hasn't been seen yet
     if (!result[storageKey] && result.pending_update_version === currentVersion) {
@@ -33,7 +38,10 @@ chrome.runtime.onInstalled.addListener(async (details) => {
     const storageKey = `seen_update_page_${currentVersion}`;
 
     try {
-      const result = await chrome.storage.local.get(storageKey);
+      const result = await chrome.storage.local.get([storageKey, 'update_notice_enabled']);
+      if (result.update_notice_enabled === false) {
+        return;
+      }
       if (!result[storageKey]) {
         // Mark pending so onStartup will open it next time Chrome is opened
         await chrome.storage.local.set({ pending_update_version: currentVersion });

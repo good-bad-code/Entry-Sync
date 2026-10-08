@@ -24,30 +24,63 @@
     <span class="project-badge" id="projectIdLabel"></span>
   </div>
 
-  <!-- Connection Status -->
+  <!-- Connection Status / Settings Header Bar -->
   <div class="status-bar" id="statusBar">
-    <div class="status-left">
-      <span class="status-dot waiting" id="statusDot"></span>
-      <span class="status-text" id="statusText">대기 중</span>
+    <div class="status-bar-main" id="statusBarMain">
+      <div class="status-left">
+        <span class="status-dot waiting" id="statusDot"></span>
+        <span class="status-text" id="statusText">대기 중</span>
+      </div>
+      <div class="status-right">
+        <span class="cf-badge">
+          <img src="cloudflare-color.png" alt="Cloudflare" class="cf-icon" />
+          Cloudflare
+        </span>
+        <span class="server-label" id="serverLabel" title="">—</span>
+        <button class="icon-btn" id="btnSettings" title="설정" type="button">
+          <span class="material-symbols-outlined">settings</span>
+        </button>
+      </div>
     </div>
-    <div class="status-right">
-      <span class="cf-badge">Cloudflare</span>
-      <span class="server-label" id="serverLabel" title="">—</span>
-    </div>
-  </div>
-
-  <!-- Variable Monitoring -->
-  <div class="section" id="recognitionSection">
-    <div class="section-title">상태 모니터링</div>
-    <div id="recognitionStatus" class="recognition-status">
-      <div class="empty-state" id="recognitionLoadingState">
-        <div class="empty-icon">⟳</div>
-        확인 중…
+    <div class="status-bar-settings" id="statusBarSettings" style="display: none;">
+      <div class="status-left">
+        <button class="icon-btn" id="btnBack" title="뒤로가기" type="button">
+          <span class="material-symbols-outlined">arrow_back</span>
+        </button>
+        <span class="status-title">설정</span>
       </div>
     </div>
   </div>
 
+  <!-- Main View -->
+  <div id="mainView">
+    <!-- Variable Monitoring -->
+    <div class="section" id="recognitionSection">
+      <div class="section-title">상태 모니터링</div>
+      <div id="recognitionStatus" class="recognition-status">
+        <div class="empty-state" id="recognitionLoadingState">
+          <div class="empty-icon">⟳</div>
+          확인 중…
+        </div>
+      </div>
+    </div>
+  </div>
 
+  <!-- Settings View -->
+  <div id="settingsView" style="display: none;">
+    <div class="section">
+      <div class="settings-group-title">사이트 관련</div>
+      <div class="setting-item">
+        <div class="setting-info">
+          <span class="setting-label">업데이트 알림 페이지</span>
+        </div>
+        <label class="toggle-switch">
+          <input type="checkbox" id="toggleUpdateNotice" checked />
+          <span class="toggle-slider"></span>
+        </label>
+      </div>
+    </div>
+  </div>
 
   <!-- Footer -->
   <div class="footer">
