@@ -58,9 +58,17 @@
     // Auth info received from content.js (top frame where __NEXT_DATA__ is accessible)
     let _cachedAuthInfo = { currentUserId: null, projectAuthorId: null };
 
-    // Extract project ID from current URL (works in both top frame and iframe)
+    // Extract project ID from current URL or World popup iframe (works in both top frame and iframe)
     function extractProjectIdFromUrl() {
         try {
+            // Priority 1: Check World popup iframe (#popupStyle > div > div > iframe)
+            const popupIframe = document.querySelector('#popupStyle iframe, #popupStyle > div > div > iframe, iframe[title="작품"], iframe[src*="/iframe/"]');
+            if (popupIframe) {
+                const src = popupIframe.getAttribute('src') || popupIframe.src || '';
+                const m = src.match(/\/iframe\/([a-zA-Z0-9_-]+)/);
+                if (m && m[1]) return m[1];
+            }
+
             let href = '';
             try { href = window.location.href; } catch (e) {}
             if (!href || (!href.includes('/ws/') && !href.includes('/project/') && !href.includes('/iframe/'))) {
@@ -68,10 +76,8 @@
             }
             const match = href.match(/\/(ws|project|iframe)\/([a-fA-F0-9a-zA-Z_-]+)/);
             const result = match ? match[2] : null;
-            console.log(`[EntrySync Inject] 🔍 extractProjectIdFromUrl: href='${href}', result='${result}'`);
             return result;
         } catch (e) {
-            console.warn('[EntrySync Inject] extractProjectIdFromUrl error:', e);
             return null;
         }
     }
@@ -203,6 +209,7 @@
                     }
                 });
             }
+            updateStatusBadge();
         } catch (e) {
             console.error('[EntrySync Inject] Error updating status variable:', e);
         }
@@ -985,13 +992,189 @@
         return snapshot;
     }
 
-    // ===== 6. Inspect Entry Variables for Popup Recognition =====
-        function postInspectionUpdate() {
+    // ===== 6. Status Badge Component & Inspect Entry Variables =====
+    function ensureStatusBadgeStyle() {
+        if (document.getElementById('entry-sync-badge-style')) return;
+        const style = document.createElement('style');
+        style.id = 'entry-sync-badge-style';
+        style.textContent = `
+            .entry-sync-badge {
+                display: inline-flex !important;
+                align-items: center !important;
+                gap: 4px !important;
+                padding: 2px 7px !important;
+                margin: 0 6px 0 0 !important;
+                border-radius: 10px !important;
+                background: rgba(0, 0, 0, 0.07) !important;
+                font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif !important;
+                font-size: 10px !important;
+                font-weight: 600 !important;
+                color: #334155 !important;
+                user-select: none !important;
+                line-height: 1 !important;
+                transition: all 0.2s ease !important;
+                vertical-align: middle !important;
+                z-index: 10 !important;
+                height: 20px !important;
+                box-sizing: border-box !important;
+                pointer-events: none !important;
+                flex-shrink: 0 !important;
+            }
+            .entry-sync-badge .badge-dot {
+                width: 6px !important;
+                height: 6px !important;
+                border-radius: 50% !important;
+                flex-shrink: 0 !important;
+                transition: background-color 0.3s ease, box-shadow 0.3s ease !important;
+            }
+            .entry-sync-badge.state-green .badge-dot {
+                background-color: #10b981 !important;
+                box-shadow: 0 0 4px rgba(16, 185, 129, 0.7) !important;
+            }
+            .entry-sync-badge.state-red .badge-dot {
+                background-color: #ef4444 !important;
+                box-shadow: 0 0 4px rgba(239, 68, 68, 0.7) !important;
+            }
+            .entry-sync-badge.is-moving.state-green .badge-dot {
+                animation: entrySyncPulseGreen 1.2s infinite ease-in-out !important;
+            }
+            .entry-sync-badge.is-moving.state-red .badge-dot {
+                animation: entrySyncPulseRed 1.2s infinite ease-in-out !important;
+            }
+            @keyframes entrySyncPulseGreen {
+                0% {
+                    transform: scale(0.85);
+                    opacity: 0.6;
+                    box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.7);
+                }
+                50% {
+                    transform: scale(1.25);
+                    opacity: 1;
+                    box-shadow: 0 0 6px 2px rgba(16, 185, 129, 0.8);
+                }
+                100% {
+                    transform: scale(0.85);
+                    opacity: 0.6;
+                    box-shadow: 0 0 0 0 rgba(16, 185, 129, 0);
+                }
+            }
+            @keyframes entrySyncPulseRed {
+                0% {
+                    transform: scale(0.85);
+                    opacity: 0.6;
+                    box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.7);
+                }
+                50% {
+                    transform: scale(1.25);
+                    opacity: 1;
+                    box-shadow: 0 0 6px 2px rgba(239, 68, 68, 0.8);
+                }
+                100% {
+                    transform: scale(0.85);
+                    opacity: 0.6;
+                    box-shadow: 0 0 0 0 rgba(239, 68, 68, 0);
+                }
+            }
+        `;
+        (document.head || document.documentElement).appendChild(style);
+    }
+
+    function getOrCreateStatusBadge() {
+        try {
+            ensureStatusBadgeStyle();
+            let badge = document.getElementById('entrySyncStatusBadge');
+            if (!badge) {
+                badge = document.createElement('div');
+                badge.id = 'entrySyncStatusBadge';
+                badge.className = 'entry-sync-badge';
+                badge.innerHTML = '<span class="badge-dot"></span><span class="badge-text"></span>';
+            }
+
+            // 1. Target canvasButton container (div.canvasButton or [class*="canvasButton"])
+            const canvasBtn = document.querySelector('.canvasButton, [class*="canvasButton"]');
+            if (canvasBtn) {
+                if (badge.parentNode !== canvasBtn) {
+                    canvasBtn.insertBefore(badge, canvasBtn.firstChild);
+                }
+                return badge;
+            }
+
+            // 2. Fallback: input inside entryEngine
+            const engineMin = document.querySelector('.entryEngineMinimize, [class*="entryEngineMinimize"], .entryEngine, [class*="entryEngine"]');
+            if (engineMin) {
+                const inputEl = engineMin.querySelector('input');
+                if (inputEl) {
+                    const targetParent = inputEl.parentNode?.parentNode || inputEl.parentNode;
+                    if (targetParent && badge.parentNode !== targetParent) {
+                        if (inputEl.nextSibling) {
+                            targetParent.insertBefore(badge, inputEl.nextSibling);
+                        } else {
+                            targetParent.appendChild(badge);
+                        }
+                    }
+                    return badge;
+                }
+            }
+
+            return badge;
+        } catch (e) {
+            return null;
+        }
+    }
+
+    function updateStatusBadge() {
+        try {
+            const badge = getOrCreateStatusBadge();
+            if (!badge) return;
+
+            const connected = isConnectedToCloudflare;
+            const inspection = (!window.Entry && tess.vm) ? tessInspect() : inspectProjectVariables();
+            const hasSync = !!(inspection && inspection.hasSyncVars);
+
+            badge.className = 'entry-sync-badge';
+
+            let colorClass = connected ? 'state-green' : 'state-red';
+            let isMoving = hasSync ? 'is-moving' : '';
+            let labelText = '';
+
+            if (connected) {
+                labelText = hasSync ? 'SYNC 연결됨' : '연결됨';
+            } else {
+                labelText = hasSync ? 'SYNC 연결 불가' : '연결 불가';
+            }
+
+            badge.classList.add(colorClass);
+            if (isMoving) badge.classList.add(isMoving);
+
+            const textEl = badge.querySelector('.badge-text');
+            if (textEl && textEl.textContent !== labelText) {
+                textEl.textContent = labelText;
+            }
+        } catch (e) {}
+    }
+
+    // Keep status badge updated periodically & on DOM updates
+    setInterval(updateStatusBadge, 1000);
+
+    function postInspectionUpdate() {
         const inspection = (!window.Entry && tess.vm) ? tessInspect() : inspectProjectVariables();
+        let detectedProjectId = extractProjectIdFromUrl();
+        try {
+            if (window.Entry && window.Entry.project) {
+                detectedProjectId = window.Entry.project._id || window.Entry.project.id || window.Entry.projectId || detectedProjectId;
+            }
+            if (window.tessvm && window.tessvm.projectId) {
+                detectedProjectId = window.tessvm.projectId || detectedProjectId;
+            }
+        } catch (e) {}
+
         window.postMessage({
             type: 'RESP_ENTRY_VARS_INSPECTION',
-            inspection: inspection
+            inspection: inspection,
+            projectId: detectedProjectId
         }, '*');
+
+        updateStatusBadge();
         return inspection;
     }
 

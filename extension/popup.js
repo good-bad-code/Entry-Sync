@@ -210,23 +210,21 @@ document.addEventListener('DOMContentLoaded', () => {
       projectIdLabel.textContent = '—';
     }
 
-    if (!isEntryPage || !projectId) {
+    if (!isEntryPage) {
       setStatus('waiting');
-      updateRecognition({ isEntryPage: isEntryPage });
+      updateRecognition({ isEntryPage: false });
       return;
     }
 
-    // Request status directly from content script on the active tab
+    // Request status directly from content script on the active tab (works for URL projects & World modal popups)
     if (tab.id) {
       chrome.tabs.sendMessage(tab.id, { action: 'GET_SYNC_STATUS' }, (response) => {
         if (chrome.runtime.lastError || !response) {
-          if (projectId) {
-            setStatus('waiting');
-            updateRecognition({ entryReady: false, hasSyncVars: false });
-          }
+          setStatus('waiting');
+          updateRecognition({ entryReady: false, hasSyncVars: false, isEntryPage: true });
           return;
         }
-        const effectiveRoomId = response.roomId || projectId;
+        const effectiveRoomId = response.roomId || currentProjectId;
         if (effectiveRoomId) {
           currentProjectId = effectiveRoomId;
           if (projectIdLabel) projectIdLabel.textContent = effectiveRoomId;
@@ -245,6 +243,7 @@ document.addEventListener('DOMContentLoaded', () => {
           setStatus('waiting');
         }
         updateRecognition({
+          isEntryPage: true,
           entryReady: true,
           hasSyncVars: response.hasSyncVars,
           vars: response.vars || {},

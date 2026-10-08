@@ -125,10 +125,23 @@
 
     // 1. Extract Unique Entry ID
     function extractEntryId() {
+        // Priority 1: Check World popup iframe (#popupStyle > div > div > iframe)
+        try {
+            const popupIframe = document.querySelector('#popupStyle iframe, #popupStyle > div > div > iframe, iframe[title="작품"], iframe[src*="/iframe/"]');
+            if (popupIframe) {
+                const src = popupIframe.getAttribute('src') || popupIframe.src || popupIframe.getAttribute('data-src') || '';
+                const match = src.match(/\/iframe\/([a-zA-Z0-9_-]+)/);
+                if (match && match[1] && isValidEntryId(match[1])) {
+                    console.log(`[EntrySync Content] 🎯 Extracted project ID from World popup iframe (#popupStyle): '${match[1]}'`);
+                    return match[1];
+                }
+            }
+        } catch (e) {}
+
         // Method A: Check window.location.href (if in top frame or inside iframe)
         const currentUrl = window.location.href;
 
-        const pathMatch = currentUrl.match(/\/(?:iframe|project|ws|world)\/([a-zA-Z0-9_-]+)/);
+        const pathMatch = currentUrl.match(/\/(?:iframe|project|ws|world|game)\/([a-zA-Z0-9_-]+)/);
         if (pathMatch && pathMatch[1] && isValidEntryId(pathMatch[1])) {
             return pathMatch[1];
         }
@@ -145,7 +158,7 @@
             const src = iframe.getAttribute('src') || iframe.src || iframe.getAttribute('data-src') || '';
             if (!src) continue;
 
-            const match = src.match(/\/(?:iframe|project|ws|world)\/([a-zA-Z0-9_-]+)/);
+            const match = src.match(/\/(?:iframe|project|ws|world|game)\/([a-zA-Z0-9_-]+)/);
             if (match && match[1] && isValidEntryId(match[1])) {
                 return match[1];
             }
@@ -155,6 +168,19 @@
                 const param = u.searchParams.get('project') || u.searchParams.get('id');
                 if (param && isValidEntryId(param)) return param;
             } catch (e) {}
+        }
+
+        // Method C: Check modal links / elements on page (for World modal popups)
+        const links = document.querySelectorAll('a[href*="/project/"], a[href*="/iframe/"], [data-project-id]');
+        for (const link of links) {
+            const dataId = link.getAttribute('data-project-id');
+            if (dataId && isValidEntryId(dataId)) return dataId;
+
+            const href = link.getAttribute('href') || '';
+            const match = href.match(/\/(?:iframe|project|ws|world|game)\/([a-zA-Z0-9_-]+)/);
+            if (match && match[1] && isValidEntryId(match[1])) {
+                return match[1];
+            }
         }
 
         return null;
@@ -575,8 +601,32 @@
             broadcastAuthInfo();
         }
 
+        // Child frame status report relayed to top frame
+        if (event.data.type === 'ENTRY_SYNC_FRAME_STATUS_REPORT') {
+            if (event.data.roomId && isValidEntryId(event.data.roomId)) {
+                if (!currentRoomId || currentRoomId !== event.data.roomId) {
+                    currentRoomId = event.data.roomId;
+                    console.log(`[EntrySync Content] 🎯 Received Room ID from child frame: '${currentRoomId}'`);
+                    connectWebSocket(currentRoomId);
+                }
+            }
+            if (event.data.inspection) {
+                cachedInspection = event.data.inspection;
+            }
+            if (event.data.isGameRunning !== undefined) {
+                isGameRunning = event.data.isGameRunning;
+            }
+        }
+
         // Inspection Response from inject.js
         if (event.data.type === 'RESP_ENTRY_VARS_INSPECTION') {
+            if (event.data.projectId && isValidEntryId(event.data.projectId)) {
+                if (!currentRoomId || currentRoomId !== event.data.projectId) {
+                    currentRoomId = event.data.projectId;
+                    console.log(`[EntrySync Content] 🎯 Room ID updated from inject.js: '${currentRoomId}'`);
+                    connectWebSocket(currentRoomId);
+                }
+            }
             if (event.data.inspection) {
                 cachedInspection = event.data.inspection;
                 try {
@@ -592,6 +642,19 @@
                             realtimeConnected: ws && ws.readyState === WebSocket.OPEN
                         }).catch(() => {});
                     }
+                } catch (e) {}
+            }
+
+            // If running inside iframe, relay status report to top window
+            if (!isTopFrame) {
+                try {
+                    window.top.postMessage({
+                        type: 'ENTRY_SYNC_FRAME_STATUS_REPORT',
+                        roomId: currentRoomId,
+                        inspection: cachedInspection,
+                        isGameRunning: isGameRunning,
+                        connected: ws && ws.readyState === WebSocket.OPEN
+                    }, '*');
                 } catch (e) {}
             }
         }
@@ -622,11 +685,12 @@
         chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
             if (request.action === 'GET_SYNC_STATUS') {
                 const detectedRoomId = currentRoomId || extractEntryId();
+                if (detectedRoomId && !currentRoomId) currentRoomId = detectedRoomId;
                 const isWsOpen = ws && ws.readyState === WebSocket.OPEN;
                 sendResponse({
                     success: true,
-                    roomId: detectedRoomId,
-                    isNewProject: detectedRoomId === 'new',
+                    roomId: currentRoomId || null,
+                    isNewProject: currentRoomId === 'new',
                     connected: isWsOpen,
                     isGameRunning: isGameRunning,
                     serverUrl: cloudflareServerUrl,
@@ -634,6 +698,9 @@
                     vars: cachedInspection.vars,
                     lists: cachedInspection.lists
                 });
+
+                // Request fresh inspection from inject.js across all frames
+                broadcastToFrames({ type: 'REQ_ENTRY_VARS_INSPECTION' });
                 return true;
             }
 
@@ -643,6 +710,15 @@
 
             return true;
         });
-    }
+    // Periodically inspect World popup modals (#popupStyle) for newly opened projects
+    setInterval(() => {
+        const detectedId = extractEntryId();
+        if (detectedId && detectedId !== currentRoomId) {
+            currentRoomId = detectedId;
+            console.log(`[EntrySync Content] 🎯 World popup project detected: '${currentRoomId}'`);
+            connectWebSocket(currentRoomId);
+            broadcastToFrames({ type: 'REQ_ENTRY_VARS_INSPECTION' });
+        }
+    }, 1000);
 
 })();
