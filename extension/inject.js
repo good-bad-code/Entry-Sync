@@ -1243,61 +1243,83 @@
         return false;
     }
 
+    function simulateRealClick(el) {
+        if (!el) return false;
+        try {
+            const opts = { bubbles: true, cancelable: true, view: window };
+            el.dispatchEvent(new PointerEvent('pointerdown', opts));
+            el.dispatchEvent(new MouseEvent('mousedown', opts));
+            el.dispatchEvent(new PointerEvent('pointerup', opts));
+            el.dispatchEvent(new MouseEvent('mouseup', opts));
+            el.dispatchEvent(new MouseEvent('click', opts));
+            if (typeof el.click === 'function') {
+                el.click();
+            }
+            return true;
+        } catch (e) {
+            try {
+                if (typeof el.click === 'function') el.click();
+                return true;
+            } catch (err) {
+                return false;
+            }
+        }
+    }
+
     function stopRunningEngine() {
         try {
-            // 1. Entry engine methods
-            if (window.Entry && window.Entry.engine) {
-                const engine = window.Entry.engine;
-                if (typeof engine.stop === 'function') {
-                    try { engine.stop(); } catch (e) {}
-                }
-                if (typeof engine.toggleRun === 'function') {
-                    try { engine.toggleRun(); } catch (e) {}
-                }
-                if (typeof engine.toggleStop === 'function') {
-                    try { engine.toggleStop(); } catch (e) {}
-                }
-                if (typeof engine.isState === 'function' && engine.isState('run')) {
-                    try { engine.state = 'stop'; } catch (e) {}
-                }
-            }
+            isGameStopping = true;
 
-            // 2. Tessvm runner
-            if (window.tessvm && typeof window.tessvm.stop === 'function') {
-                try { window.tessvm.stop(); } catch (e) {}
-            }
-
-            // 3. DOM Stop Button Click Simulation (Works for React / Web Components / Custom UI)
             const stopBtnSelectors = [
-                '.entryEngineMinimizeButton',
-                '[class*="entryEngineMinimize"]',
-                '[class*="stopButton"]',
-                '[class*="entryEngineStop"]',
-                '[class*="entryEnginePlay"]',
+                'button[class*="entryEngineButtonStop"]',
+                'button[class*="entryEngineStopButton"]',
+                '[class*="entryEngineButtonStop"]',
+                '[class*="entryEngineStopButton"]',
                 'button[title*="정지"]',
                 'button[title*="Stop"]',
-                '.tessvm-stop',
-                '[class*="tessvm-stop"]'
+                'button[aria-label*="정지"]',
+                'button[aria-label*="Stop"]',
+                '[class*="tessvm-stop"]',
+                '[class*="stopButton"]',
+                '[class*="StopButton"]'
             ];
-            stopBtnSelectors.forEach(sel => {
-                const el = document.querySelector(sel);
-                if (el) {
-                    try { el.click(); } catch (e) {}
+
+            let clickedDOM = false;
+            for (const sel of stopBtnSelectors) {
+                const btn = document.querySelector(sel);
+                if (btn) {
+                    clickedDOM = simulateRealClick(btn);
+                    if (clickedDOM) {
+                        console.log(`[EntrySync Inject] 🎯 Simulated real user click on DOM stop button: '${sel}'`);
+                        break;
+                    }
+                }
+            }
+
+            // Fallback ONLY IF no DOM stop button was found or clicked
+            if (!clickedDOM) {
+                if (window.Entry && window.Entry.engine) {
+                    if (typeof window.Entry.engine.stop === 'function') {
+                        try {
+                            window.Entry.engine.stop();
+                            console.log('[EntrySync Inject] 🎯 Fallback: Executed Entry.engine.stop()');
+                        } catch (e) {}
+                    }
+                }
+                if (window.tessvm && typeof window.tessvm.stop === 'function') {
                     try {
-                        el.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, view: window }));
+                        window.tessvm.stop();
+                        console.log('[EntrySync Inject] 🎯 Fallback: Executed tessvm.stop()');
                     } catch (e) {}
                 }
-            });
+            }
 
-            // 4. Send ENTRY_SYNC_ENGINE_STOP event to sync components
-            window.postMessage({
-                type: 'ENTRY_SYNC_ENGINE_STOP',
-                currentUserId: getUserAndAuthorInfo().currentUserId,
-                projectAuthorId: getUserAndAuthorInfo().projectAuthorId,
-                isWorkspacePage: isWorkspacePage()
-            }, '*');
+            setTimeout(() => {
+                isGameStopping = false;
+            }, 100);
         } catch (e) {
             console.error('[EntrySync Inject] Error stopping engine:', e);
+            isGameStopping = false;
         }
     }
 
@@ -1342,14 +1364,19 @@
             setTimeout(() => overlay.remove(), 200);
         };
 
-        overlay.querySelector('#entrySyncModalCancel').onclick = closeModal;
+        const handleCancel = () => {
+            closeModal();
+            toggleEntrySyncState(entrySyncEnabled);
+        };
+
+        overlay.querySelector('#entrySyncModalCancel').onclick = handleCancel;
         overlay.querySelector('#entrySyncModalConfirm').onclick = () => {
             closeModal();
             if (typeof onConfirm === 'function') onConfirm();
         };
 
         overlay.onclick = (e) => {
-            if (e.target === overlay) closeModal();
+            if (e.target === overlay) handleCancel();
         };
 
         requestAnimationFrame(() => {
@@ -1426,21 +1453,28 @@
                 return badge;
             }
 
-            // 4. Fallback: input element inside engine container
-            const engineMin = document.querySelector('.entryEngineMinimize, [class*="entryEngineMinimize"], .entryEngine, [class*="entryEngine"]');
-            if (engineMin) {
-                const inputEl = engineMin.querySelector('input');
-                if (inputEl) {
-                    const targetParent = inputEl.parentNode?.parentNode || inputEl.parentNode;
-                    if (targetParent && badge.parentNode !== targetParent) {
-                        if (inputEl.nextSibling) {
-                            targetParent.insertBefore(badge, inputEl.nextSibling);
-                        } else {
-                            targetParent.appendChild(badge);
-                        }
-                    }
-                    return badge;
+            // 4. Target header or control bar buttons inside Entry Engine container
+            const controlBtn = document.querySelector('[class*="entryEngineSpeed"], [class*="entryEngineMinimize"], [class*="entryEngineHeader"]');
+            if (controlBtn && controlBtn.parentNode) {
+                const parent = controlBtn.parentNode;
+                try {
+                    parent.style.display = 'inline-flex';
+                    parent.style.alignItems = 'center';
+                } catch (e) {}
+                if (badge.parentNode !== parent) {
+                    parent.insertBefore(badge, controlBtn);
                 }
+                return badge;
+            }
+
+            // 5. Fallback: input or canvas element inside engine container
+            const engineContainer = document.querySelector('.entryEngineMinimize, [class*="entryEngineMinimize"], .entryEngine, [class*="entryEngine"], #entryCanvas');
+            if (engineContainer) {
+                const targetParent = engineContainer.parentNode || engineContainer;
+                if (targetParent && badge.parentNode !== targetParent) {
+                    targetParent.insertBefore(badge, targetParent.firstChild);
+                }
+                return badge;
             }
 
             return badge;
@@ -1461,13 +1495,24 @@
                 badge.style.removeProperty('display');
             }
 
-            badge.className = 'entry-sync-badge';
+            const dotEl = badge.querySelector('.badge-dot');
+            const textEl = badge.querySelector('.badge-text');
 
             if (!entrySyncEnabled) {
-                badge.classList.add('is-disabled');
-                const textEl = badge.querySelector('.badge-text');
-                if (textEl) textEl.textContent = 'SYNC 꺼짐';
+                badge.className = 'entry-sync-badge is-disabled';
+                if (dotEl) {
+                    dotEl.style.setProperty('background-color', '#94a3b8', 'important');
+                    dotEl.style.setProperty('box-shadow', 'none', 'important');
+                    dotEl.style.setProperty('animation', 'none', 'important');
+                }
+                if (textEl && textEl.textContent !== 'SYNC 꺼짐') {
+                    textEl.textContent = 'SYNC 꺼짐';
+                }
                 return;
+            } else if (dotEl) {
+                dotEl.style.removeProperty('background-color');
+                dotEl.style.removeProperty('box-shadow');
+                dotEl.style.removeProperty('animation');
             }
 
             const connected = isConnectedToCloudflare;
@@ -1484,10 +1529,8 @@
                 labelText = hasSync ? 'SYNC 연결 불가' : '연결 불가';
             }
 
-            badge.classList.add(colorClass);
-            if (isMoving) badge.classList.add(isMoving);
+            badge.className = `entry-sync-badge ${colorClass} ${isMoving}`.trim();
 
-            const textEl = badge.querySelector('.badge-text');
             if (textEl && textEl.textContent !== labelText) {
                 textEl.textContent = labelText;
             }
@@ -1560,10 +1603,16 @@
     // ===== 7. Hook Entry Engine Run & Stop Events =====
     let gameRunSetupDone = false; // Per-cycle dedup: prevents double-setup from multiple event listeners
 
+    let stopLockTimer = null;
+
     function hookEntryEngine() {
         if (!window.Entry || !window.Entry.engine) return;
 
         function onGameRun() {
+            if (stopLockTimer) {
+                clearTimeout(stopLockTimer);
+                stopLockTimer = null;
+            }
             // DEDUP: Monkey-patch fires this BEFORE originalRun.
             // addEventListener/engine.on also fire it AFTER. Skip duplicates.
             if (gameRunSetupDone) {
@@ -1625,12 +1674,14 @@
                 syncDataSnapshot: syncDataSnapshot
             }, '*');
 
-            // Clear frozen snapshots & release isGameStopping lock after 1500ms delay to prevent reset echoes
-            setTimeout(function () {
+            // Clear frozen snapshots & release isGameStopping lock after 100ms delay to prevent reset echoes
+            if (stopLockTimer) clearTimeout(stopLockTimer);
+            stopLockTimer = setTimeout(function () {
                 frozenDataOnly = null;
                 frozenSyncData = null;
                 isGameStopping = false;
-            }, 1500);
+                stopLockTimer = null;
+            }, 100);
         }
 
         if (!isHooked) {
@@ -2195,7 +2246,17 @@
                 statusBadgeEnabled = !!event.data.status_badge_enabled;
             }
             if (event.data.entry_sync_enabled !== undefined) {
-                entrySyncEnabled = !!event.data.entry_sync_enabled;
+                const targetEnabled = !!event.data.entry_sync_enabled;
+                if (targetEnabled !== entrySyncEnabled) {
+                    if (isEngineRunning()) {
+                        showEntrySyncConfirmModal(targetEnabled, () => {
+                            stopRunningEngine();
+                            toggleEntrySyncState(targetEnabled);
+                        });
+                    } else {
+                        entrySyncEnabled = targetEnabled;
+                    }
+                }
             }
             updateStatusBadge();
         }

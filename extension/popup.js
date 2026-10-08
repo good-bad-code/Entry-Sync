@@ -11,6 +11,7 @@ const serverLabel = $('serverLabel');
 const newProjectToast = $('newProjectToast');
 const btnSettings = $('btnSettings');
 const btnBack = $('btnBack');
+const btnPower = $('btnPower');
 const statusBarMain = $('statusBarMain');
 const statusBarSettings = $('statusBarSettings');
 const mainView = $('mainView');
@@ -21,6 +22,7 @@ const toggleStatusBadge = $('toggleStatusBadge');
 // ===== State =====
 let currentProjectId = null;
 let currentIsEntryPage = false;
+let globalEntrySyncEnabled = true;
 let toastTimer = null;
 
 function showSettingsView() {
@@ -79,6 +81,102 @@ function extractProjectId(url) {
   }
 }
 
+// ===== Power State Control =====
+function refreshActiveTabStatus() {
+  if (!globalEntrySyncEnabled) return;
+
+  chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+    const tab = tabs[0];
+    if (!tab || !tab.url) {
+      setStatus('waiting');
+      updateRecognition({ isEntryPage: false });
+      return;
+    }
+
+    const isEntryPage = tab.url.includes('playentry.org') || tab.url.includes('space.playentry.org');
+    currentIsEntryPage = isEntryPage;
+    const projectId = extractProjectId(tab.url);
+    if (projectId) currentProjectId = projectId;
+
+    if (!isEntryPage) {
+      setStatus('waiting');
+      updateRecognition({ isEntryPage: false });
+      return;
+    }
+
+    if (tab.id) {
+      chrome.tabs.sendMessage(tab.id, { action: 'GET_SYNC_STATUS' }, (response) => {
+        if (!globalEntrySyncEnabled) return;
+        if (chrome.runtime.lastError || !response) {
+          setStatus('waiting');
+          updateRecognition({ entryReady: false, hasSyncVars: false, isEntryPage: true });
+          return;
+        }
+        const effectiveRoomId = response.roomId || currentProjectId;
+        if (effectiveRoomId) {
+          currentProjectId = effectiveRoomId;
+          if (projectIdLabel) projectIdLabel.textContent = effectiveRoomId;
+        }
+        if (response.serverUrl) updateServerLabel(response.serverUrl);
+        if (response.connected) {
+          setStatus('connected');
+        } else if (response.isGameRunning) {
+          setStatus('error');
+        } else {
+          setStatus('waiting');
+        }
+        updateRecognition({
+          isEntryPage: true,
+          entryReady: true,
+          hasSyncVars: response.hasSyncVars,
+          vars: response.vars || {},
+          lists: response.lists || []
+        });
+      });
+    }
+  });
+}
+
+function renderPowerState(enabled) {
+  globalEntrySyncEnabled = enabled;
+  if (btnPower) {
+    const powerText = $('powerText');
+    if (enabled) {
+      btnPower.className = 'power-btn';
+      btnPower.title = 'Entry Sync 끄기';
+      if (powerText) powerText.textContent = 'SYNC ON';
+    } else {
+      btnPower.className = 'power-btn off';
+      btnPower.title = 'Entry Sync 켜기';
+      if (powerText) powerText.textContent = 'SYNC OFF';
+    }
+  }
+  if (mainView) {
+    if (!enabled) {
+      mainView.classList.add('is-disabled');
+      setStatus('disabled');
+      updateRecognition({ isEntryPage: currentIsEntryPage, isDisabled: true });
+    } else {
+      mainView.classList.remove('is-disabled');
+      refreshActiveTabStatus();
+    }
+  }
+}
+
+function toggleGlobalPowerState(newEnabled) {
+  chrome.storage.local.set({ entry_sync_enabled: newEnabled }, () => {
+    renderPowerState(newEnabled);
+    chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+      if (tabs[0]?.id) {
+        chrome.tabs.sendMessage(tabs[0].id, {
+          type: 'ENTRY_SYNC_TOGGLE_ENABLED',
+          enabled: newEnabled
+        }).catch(() => {});
+      }
+    });
+  });
+}
+
 // ===== Status Updates =====
 function setStatus(state) {
   if (!statusDot || !statusText) return;
@@ -89,6 +187,7 @@ function setStatus(state) {
     connecting: '연결 중…',
     connected:  '연결됨',
     error:      '연결 불가',
+    disabled:   '기능 꺼짐',
   };
   statusText.textContent = labels[state] || '알 수 없음';
 }
@@ -114,6 +213,21 @@ function updateServerLabel(serverUrl) {
 function updateRecognition(msg = {}) {
   const container = document.getElementById('recognitionStatus');
   if (!container) return;
+
+  if (!globalEntrySyncEnabled || msg.isDisabled) {
+    container.innerHTML = `
+      <div class="monitor-card">
+        <div class="monitor-left">
+          <span class="material-symbols-outlined monitor-icon gray">power_off</span>
+          <div class="monitor-info">
+            <span class="monitor-title">작품 감지</span>
+            <span class="monitor-subtitle gray">Entry Sync 꺼짐</span>
+          </div>
+        </div>
+        <span class="monitor-badge pink">Disabled</span>
+      </div>`;
+    return;
+  }
 
   const isEntryPage = msg.isEntryPage !== undefined ? msg.isEntryPage : currentIsEntryPage;
   const vars = msg.vars || {};
@@ -190,6 +304,21 @@ function updateRecognition(msg = {}) {
 document.addEventListener('DOMContentLoaded', () => {
   if (!isExtensionValid()) return;
 
+  // Load global power state
+  chrome.storage.local.get(['entry_sync_enabled'], (res) => {
+    const isEnabled = res.entry_sync_enabled !== false;
+    renderPowerState(isEnabled);
+  });
+
+  // Storage listener for state synchronization
+  if (chrome.storage.onChanged) {
+    chrome.storage.onChanged.addListener((changes, namespace) => {
+      if (namespace === 'local' && changes.entry_sync_enabled !== undefined) {
+        renderPowerState(changes.entry_sync_enabled.newValue !== false);
+      }
+    });
+  }
+
   chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
     const tab = tabs[0];
     if (!tab || !tab.url) {
@@ -264,6 +393,11 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // Toast click-to-dismiss
   newProjectToast?.addEventListener('click', hideNewProjectToast);
+
+  // ===== Power Button Handler =====
+  btnPower?.addEventListener('click', () => {
+    toggleGlobalPowerState(!globalEntrySyncEnabled);
+  });
 
   // ===== Settings View Navigation =====
   btnSettings?.addEventListener('click', showSettingsView);
