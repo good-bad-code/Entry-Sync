@@ -14,6 +14,7 @@
     let initialDataCache = null;
     let isGameRunning = false;
     let isIntentionalClose = false;
+    let entrySyncEnabled = true;
     let cloudflareServerUrl = 'wss://entry-sync.entry-sync.workers.dev/ws'; // Default WebSocket endpoint
 
     let cachedInspection = {
@@ -188,17 +189,19 @@
 
     const isTopFrame = window === window.top;
 
-    // Broadcast config updates (serverUrl, status_badge_enabled) to inject.js
+    // Broadcast config updates (serverUrl, status_badge_enabled, entry_sync_enabled) to inject.js
     function syncConfigToFrames() {
         if (chrome && chrome.storage && chrome.storage.local) {
-            chrome.storage.local.get(['serverUrl', 'status_badge_enabled'], function (result) {
+            chrome.storage.local.get(['serverUrl', 'status_badge_enabled', 'entry_sync_enabled'], function (result) {
                 if (result && result.serverUrl) {
                     cloudflareServerUrl = result.serverUrl;
                 }
+                entrySyncEnabled = result.entry_sync_enabled !== false;
                 const isBadgeEnabled = result.status_badge_enabled !== false;
                 broadcastToFrames({
                     type: 'ENTRY_SYNC_CONFIG_UPDATE',
-                    status_badge_enabled: isBadgeEnabled
+                    status_badge_enabled: isBadgeEnabled,
+                    entry_sync_enabled: entrySyncEnabled
                 });
             });
         }
@@ -206,10 +209,19 @@
 
     if (chrome && chrome.storage && chrome.storage.onChanged) {
         chrome.storage.onChanged.addListener((changes, namespace) => {
-            if (namespace === 'local' && changes.status_badge_enabled) {
+            if (namespace === 'local' && (changes.status_badge_enabled || changes.entry_sync_enabled)) {
+                if (changes.entry_sync_enabled !== undefined) {
+                    entrySyncEnabled = changes.entry_sync_enabled.newValue !== false;
+                    if (!entrySyncEnabled) {
+                        disconnectWebSocket();
+                    } else if (currentRoomId && currentRoomId !== 'new') {
+                        connectWebSocket(currentRoomId);
+                    }
+                }
                 broadcastToFrames({
                     type: 'ENTRY_SYNC_CONFIG_UPDATE',
-                    status_badge_enabled: changes.status_badge_enabled.newValue !== false
+                    status_badge_enabled: changes.status_badge_enabled ? changes.status_badge_enabled.newValue !== false : undefined,
+                    entry_sync_enabled: entrySyncEnabled
                 });
             }
         });
@@ -305,6 +317,10 @@
 
     // 3. Connect to Cloudflare Worker WebSocket
     function connectWebSocket(roomId) {
+        if (!entrySyncEnabled) {
+            console.log('[EntrySync Content] ⏸️ EntrySync is currently disabled by user.');
+            return;
+        }
         if (!roomId || roomId === 'new') {
             console.log(`[EntrySync Content] 🛑 Skipping WebSocket connect for roomId: '${roomId}'`);
             return;
@@ -632,6 +648,30 @@
         // inject.js requesting config info
         if (event.data.type === 'ENTRY_SYNC_REQUEST_CONFIG') {
             syncConfigToFrames();
+        }
+
+        // inject.js toggling EntrySync ON/OFF state
+        if (event.data.type === 'ENTRY_SYNC_TOGGLE_ENABLED') {
+            if (!isTopFrame) {
+                window.top.postMessage(event.data, '*');
+                return;
+            }
+            const newEnabled = event.data.enabled !== false;
+            entrySyncEnabled = newEnabled;
+            if (chrome && chrome.storage && chrome.storage.local) {
+                chrome.storage.local.set({ entry_sync_enabled: newEnabled });
+            }
+            if (!newEnabled) {
+                console.log('[EntrySync Content] ⏸️ EntrySync turned OFF via badge toggle.');
+                disconnectWebSocket();
+            } else if (currentRoomId && currentRoomId !== 'new') {
+                console.log('[EntrySync Content] ▶️ EntrySync turned ON via badge toggle.');
+                connectWebSocket(currentRoomId);
+            }
+            broadcastToFrames({
+                type: 'ENTRY_SYNC_CONFIG_UPDATE',
+                entry_sync_enabled: newEnabled
+            });
         }
 
         // Child frame status report relayed to top frame

@@ -15,6 +15,7 @@
 
     let isConnectedToCloudflare = false;
     let statusBadgeEnabled = true;
+    let entrySyncEnabled = true;
     let isApplyingRemote = false; // Flag to prevent broadcast echo loop
     let isGameStopping = false;   // Flag to prevent broadcasting during stop/reset sequence
     let isStartingUp = false;     // Flag to protect initial remote state on run
@@ -1049,9 +1050,127 @@
                 z-index: 10 !important;
                 height: 18px !important;
                 box-sizing: border-box !important;
-                pointer-events: none !important;
+                pointer-events: auto !important;
+                cursor: pointer !important;
                 flex-shrink: 0 !important;
                 white-space: nowrap !important;
+            }
+            .entry-sync-badge:hover {
+                background: rgba(0, 0, 0, 0.12) !important;
+                transform: translateY(-6.5px) scale(1.04) !important;
+            }
+            .entry-sync-badge.is-disabled {
+                opacity: 0.45 !important;
+                filter: grayscale(0.8) !important;
+            }
+            .entry-sync-badge.is-disabled .badge-dot {
+                background-color: #94a3b8 !important;
+                box-shadow: none !important;
+                animation: none !important;
+            }
+            .entry-sync-modal-overlay {
+                position: fixed !important;
+                top: 0 !important;
+                left: 0 !important;
+                width: 100vw !important;
+                height: 100vh !important;
+                background: rgba(15, 23, 42, 0.5) !important;
+                backdrop-filter: blur(4px) !important;
+                display: flex !important;
+                align-items: center !important;
+                justify-content: center !important;
+                z-index: 9999999 !important;
+                opacity: 0 !important;
+                transition: opacity 0.2s ease !important;
+                pointer-events: auto !important;
+            }
+            .entry-sync-modal-overlay.active {
+                opacity: 1 !important;
+            }
+            .entry-sync-modal-card {
+                background: #ffffff !important;
+                border-radius: 16px !important;
+                padding: 24px !important;
+                width: 320px !important;
+                max-width: 90vw !important;
+                box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.2), 0 8px 10px -6px rgba(0, 0, 0, 0.1) !important;
+                transform: scale(0.95) !important;
+                transition: transform 0.2s cubic-bezier(0.16, 1, 0.3, 1) !important;
+                font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif !important;
+                box-sizing: border-box !important;
+                text-align: center !important;
+            }
+            .entry-sync-modal-overlay.active .entry-sync-modal-card {
+                transform: scale(1) !important;
+            }
+            .entry-sync-modal-header {
+                display: flex !important;
+                align-items: center !important;
+                justify-content: center !important;
+                gap: 8px !important;
+                margin-bottom: 12px !important;
+            }
+            .entry-sync-modal-icon {
+                font-size: 22px !important;
+            }
+            .entry-sync-modal-title {
+                font-size: 17px !important;
+                font-weight: 700 !important;
+                color: #0f172a !important;
+            }
+            .entry-sync-modal-body {
+                margin-bottom: 20px !important;
+            }
+            .entry-sync-modal-msg {
+                font-size: 14px !important;
+                font-weight: 600 !important;
+                color: #334155 !important;
+                margin: 0 0 6px 0 !important;
+                line-height: 1.4 !important;
+            }
+            .entry-sync-modal-submsg {
+                font-size: 12px !important;
+                color: #64748b !important;
+                margin: 0 !important;
+                line-height: 1.4 !important;
+            }
+            .entry-sync-modal-actions {
+                display: flex !important;
+                gap: 10px !important;
+                justify-content: center !important;
+            }
+            .entry-sync-modal-btn {
+                flex: 1 !important;
+                padding: 10px 16px !important;
+                border-radius: 10px !important;
+                font-size: 13px !important;
+                font-weight: 600 !important;
+                border: none !important;
+                cursor: pointer !important;
+                transition: all 0.15s ease !important;
+                outline: none !important;
+            }
+            .entry-sync-modal-btn.cancel {
+                background: #f1f5f9 !important;
+                color: #475569 !important;
+            }
+            .entry-sync-modal-btn.cancel:hover {
+                background: #e2e8f0 !important;
+                color: #1e293b !important;
+            }
+            .entry-sync-modal-btn.confirm.turn-off {
+                background: #ef4444 !important;
+                color: #ffffff !important;
+            }
+            .entry-sync-modal-btn.confirm.turn-off:hover {
+                background: #dc2626 !important;
+            }
+            .entry-sync-modal-btn.confirm.turn-on {
+                background: #0284c7 !important;
+                color: #ffffff !important;
+            }
+            .entry-sync-modal-btn.confirm.turn-on:hover {
+                background: #0369a1 !important;
             }
             .entry-sync-badge .badge-dot {
                 width: 5px !important;
@@ -1112,6 +1231,141 @@
         (document.head || document.documentElement).appendChild(style);
     }
 
+    function isEngineRunning() {
+        try {
+            if (window.Entry && window.Entry.engine && typeof window.Entry.engine.isState === 'function') {
+                return window.Entry.engine.isState('run');
+            }
+            if (window.tessvm && window.tessvm.state) {
+                return window.tessvm.state !== 'stop';
+            }
+        } catch (e) {}
+        return false;
+    }
+
+    function stopRunningEngine() {
+        try {
+            // 1. Entry engine methods
+            if (window.Entry && window.Entry.engine) {
+                const engine = window.Entry.engine;
+                if (typeof engine.stop === 'function') {
+                    try { engine.stop(); } catch (e) {}
+                }
+                if (typeof engine.toggleRun === 'function') {
+                    try { engine.toggleRun(); } catch (e) {}
+                }
+                if (typeof engine.toggleStop === 'function') {
+                    try { engine.toggleStop(); } catch (e) {}
+                }
+                if (typeof engine.isState === 'function' && engine.isState('run')) {
+                    try { engine.state = 'stop'; } catch (e) {}
+                }
+            }
+
+            // 2. Tessvm runner
+            if (window.tessvm && typeof window.tessvm.stop === 'function') {
+                try { window.tessvm.stop(); } catch (e) {}
+            }
+
+            // 3. DOM Stop Button Click Simulation (Works for React / Web Components / Custom UI)
+            const stopBtnSelectors = [
+                '.entryEngineMinimizeButton',
+                '[class*="entryEngineMinimize"]',
+                '[class*="stopButton"]',
+                '[class*="entryEngineStop"]',
+                '[class*="entryEnginePlay"]',
+                'button[title*="정지"]',
+                'button[title*="Stop"]',
+                '.tessvm-stop',
+                '[class*="tessvm-stop"]'
+            ];
+            stopBtnSelectors.forEach(sel => {
+                const el = document.querySelector(sel);
+                if (el) {
+                    try { el.click(); } catch (e) {}
+                    try {
+                        el.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, view: window }));
+                    } catch (e) {}
+                }
+            });
+
+            // 4. Send ENTRY_SYNC_ENGINE_STOP event to sync components
+            window.postMessage({
+                type: 'ENTRY_SYNC_ENGINE_STOP',
+                currentUserId: getUserAndAuthorInfo().currentUserId,
+                projectAuthorId: getUserAndAuthorInfo().projectAuthorId,
+                isWorkspacePage: isWorkspacePage()
+            }, '*');
+        } catch (e) {
+            console.error('[EntrySync Inject] Error stopping engine:', e);
+        }
+    }
+
+    function showEntrySyncConfirmModal(isTurningOn, onConfirm) {
+        let existing = document.getElementById('entrySyncModalOverlay');
+        if (existing) existing.remove();
+
+        const overlay = document.createElement('div');
+        overlay.id = 'entrySyncModalOverlay';
+        overlay.className = 'entry-sync-modal-overlay';
+
+        const actionTitle = isTurningOn ? 'Entry Sync 켜기' : 'Entry Sync 끄기';
+        const actionQuestion = isTurningOn 
+            ? 'Entry Sync를 켜시겠습니까?' 
+            : 'Entry Sync를 끄시겠습니까?';
+
+        const iconSvg = isTurningOn 
+            ? `<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#0284c7" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>`
+            : `<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#ef4444" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M10 15V9M14 15V9"/></svg>`;
+
+        overlay.innerHTML = `
+            <div class="entry-sync-modal-card">
+                <div class="entry-sync-modal-header">
+                    <span class="entry-sync-modal-icon">${iconSvg}</span>
+                    <span class="entry-sync-modal-title">${actionTitle}</span>
+                </div>
+                <div class="entry-sync-modal-body">
+                    <p class="entry-sync-modal-msg">${actionQuestion}</p>
+                    <p class="entry-sync-modal-submsg">작품을 다시 시작해야 적용됩니다.</p>
+                </div>
+                <div class="entry-sync-modal-actions">
+                    <button type="button" class="entry-sync-modal-btn cancel" id="entrySyncModalCancel">아니오</button>
+                    <button type="button" class="entry-sync-modal-btn confirm ${isTurningOn ? 'turn-on' : 'turn-off'}" id="entrySyncModalConfirm">예</button>
+                </div>
+            </div>
+        `;
+
+        (document.body || document.documentElement).appendChild(overlay);
+
+        const closeModal = () => {
+            overlay.classList.remove('active');
+            setTimeout(() => overlay.remove(), 200);
+        };
+
+        overlay.querySelector('#entrySyncModalCancel').onclick = closeModal;
+        overlay.querySelector('#entrySyncModalConfirm').onclick = () => {
+            closeModal();
+            if (typeof onConfirm === 'function') onConfirm();
+        };
+
+        overlay.onclick = (e) => {
+            if (e.target === overlay) closeModal();
+        };
+
+        requestAnimationFrame(() => {
+            overlay.classList.add('active');
+        });
+    }
+
+    function toggleEntrySyncState(newEnabled) {
+        entrySyncEnabled = newEnabled;
+        updateStatusBadge();
+        window.postMessage({
+            type: 'ENTRY_SYNC_TOGGLE_ENABLED',
+            enabled: entrySyncEnabled
+        }, '*');
+    }
+
     function getOrCreateStatusBadge() {
         try {
             ensureStatusBadgeStyle();
@@ -1121,6 +1375,21 @@
                 badge.id = 'entrySyncStatusBadge';
                 badge.className = 'entry-sync-badge';
                 badge.innerHTML = '<span class="badge-dot"></span><span class="badge-text"></span>';
+
+                badge.addEventListener('click', (e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+
+                    const targetEnabled = !entrySyncEnabled;
+                    if (isEngineRunning()) {
+                        showEntrySyncConfirmModal(targetEnabled, () => {
+                            stopRunningEngine();
+                            toggleEntrySyncState(targetEnabled);
+                        });
+                    } else {
+                        toggleEntrySyncState(targetEnabled);
+                    }
+                });
             }
 
             // 1. Target tessvm boost element (.tessvm-boost)
@@ -1192,11 +1461,18 @@
                 badge.style.removeProperty('display');
             }
 
+            badge.className = 'entry-sync-badge';
+
+            if (!entrySyncEnabled) {
+                badge.classList.add('is-disabled');
+                const textEl = badge.querySelector('.badge-text');
+                if (textEl) textEl.textContent = 'SYNC 꺼짐';
+                return;
+            }
+
             const connected = isConnectedToCloudflare;
             const inspection = (!window.Entry && tess.vm) ? tessInspect() : inspectProjectVariables();
             const hasSync = !!(inspection && inspection.hasSyncVars);
-
-            badge.className = 'entry-sync-badge';
 
             let colorClass = connected ? 'state-green' : 'state-red';
             let isMoving = hasSync ? 'is-moving' : '';
@@ -1917,8 +2193,11 @@
         if (event.data.type === 'ENTRY_SYNC_CONFIG_UPDATE') {
             if (event.data.status_badge_enabled !== undefined) {
                 statusBadgeEnabled = !!event.data.status_badge_enabled;
-                updateStatusBadge();
             }
+            if (event.data.entry_sync_enabled !== undefined) {
+                entrySyncEnabled = !!event.data.entry_sync_enabled;
+            }
+            updateStatusBadge();
         }
 
         // Auth info from content.js (top frame parses __NEXT_DATA__ and sends it here)
