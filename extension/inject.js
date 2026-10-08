@@ -1000,15 +1000,41 @@
         style.id = 'entry-sync-badge-style';
         style.textContent = `
             .canvasButton, [class*="canvasButton"], .tessvm-bar-right, .tessvm-bar-side, .tessvm-bar {
+                display: inline-flex !important;
+                align-items: center !important;
+                justify-content: flex-end !important;
                 flex-wrap: nowrap !important;
                 white-space: nowrap !important;
+                width: auto !important;
+                min-width: max-content !important;
+                overflow: visible !important;
+            }
+            .canvasButton > *, [class*="canvasButton"] > * {
+                position: relative !important;
+                left: auto !important;
+                right: auto !important;
+                top: auto !important;
+                bottom: auto !important;
+                flex-shrink: 0 !important;
+                margin-right: 6px !important;
+            }
+            .canvasButton > *:last-child, [class*="canvasButton"] > *:last-child {
+                margin-right: 0 !important;
+            }
+            .canvasButton > *:not(button):not(.entry-sync-badge),
+            [class*="canvasButton"] > *:not(button):not(.entry-sync-badge),
+            .tessvm-boost, [class*="tessvm-boost"] {
+                transform: translateY(-5.5px) !important;
+                display: inline-flex !important;
+                align-items: center !important;
             }
             .entry-sync-badge {
                 display: inline-flex !important;
                 align-items: center !important;
                 gap: 4px !important;
                 padding: 1px 6px !important;
-                margin: 0 4px !important;
+                margin: 0 6px 0 0 !important;
+                transform: translateY(-6.5px) !important;
                 border-radius: 10px !important;
                 background: rgba(0, 0, 0, 0.06) !important;
                 font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif !important;
@@ -1117,6 +1143,13 @@
             // 3. Target standard canvasButton container (.canvasButton)
             const canvasBtn = document.querySelector('.canvasButton, [class*="canvasButton"]');
             if (canvasBtn) {
+                try {
+                    canvasBtn.style.display = 'inline-flex';
+                    canvasBtn.style.alignItems = 'center';
+                    canvasBtn.style.flexWrap = 'nowrap';
+                    canvasBtn.style.whiteSpace = 'nowrap';
+                } catch (e) {}
+
                 if (badge.parentNode !== canvasBtn) {
                     canvasBtn.insertBefore(badge, canvasBtn.firstChild);
                 }
