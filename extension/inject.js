@@ -993,19 +993,24 @@
     }
 
     // ===== 6. Status Badge Component & Inspect Entry Variables =====
+    // ===== 6. Status Badge Component & Inspect Entry Variables =====
     function ensureStatusBadgeStyle() {
         if (document.getElementById('entry-sync-badge-style')) return;
         const style = document.createElement('style');
         style.id = 'entry-sync-badge-style';
         style.textContent = `
+            .canvasButton, [class*="canvasButton"], .tessvm-bar-right, .tessvm-bar-side, .tessvm-bar {
+                flex-wrap: nowrap !important;
+                white-space: nowrap !important;
+            }
             .entry-sync-badge {
                 display: inline-flex !important;
                 align-items: center !important;
                 gap: 4px !important;
-                padding: 2px 7px !important;
-                margin: 0 6px 0 0 !important;
+                padding: 1px 6px !important;
+                margin: 0 4px !important;
                 border-radius: 10px !important;
-                background: rgba(0, 0, 0, 0.07) !important;
+                background: rgba(0, 0, 0, 0.06) !important;
                 font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif !important;
                 font-size: 10px !important;
                 font-weight: 600 !important;
@@ -1015,14 +1020,15 @@
                 transition: all 0.2s ease !important;
                 vertical-align: middle !important;
                 z-index: 10 !important;
-                height: 20px !important;
+                height: 18px !important;
                 box-sizing: border-box !important;
                 pointer-events: none !important;
                 flex-shrink: 0 !important;
+                white-space: nowrap !important;
             }
             .entry-sync-badge .badge-dot {
-                width: 6px !important;
-                height: 6px !important;
+                width: 5px !important;
+                height: 5px !important;
                 border-radius: 50% !important;
                 flex-shrink: 0 !important;
                 transition: background-color 0.3s ease, box-shadow 0.3s ease !important;
@@ -1090,7 +1096,25 @@
                 badge.innerHTML = '<span class="badge-dot"></span><span class="badge-text"></span>';
             }
 
-            // 1. Target canvasButton container (div.canvasButton or [class*="canvasButton"])
+            // 1. Target tessvm boost element (.tessvm-boost)
+            const tessvmBoost = document.querySelector('.tessvm-boost, [class*="tessvm-boost"]');
+            if (tessvmBoost && tessvmBoost.parentNode) {
+                if (badge.parentNode !== tessvmBoost.parentNode || badge.nextSibling !== tessvmBoost) {
+                    tessvmBoost.parentNode.insertBefore(badge, tessvmBoost);
+                }
+                return badge;
+            }
+
+            // 2. Target tessvm-bar-right (.tessvm-bar-right)
+            const tessvmRight = document.querySelector('.tessvm-bar-right, [class*="tessvm-bar-right"]');
+            if (tessvmRight) {
+                if (badge.parentNode !== tessvmRight) {
+                    tessvmRight.insertBefore(badge, tessvmRight.firstChild);
+                }
+                return badge;
+            }
+
+            // 3. Target standard canvasButton container (.canvasButton)
             const canvasBtn = document.querySelector('.canvasButton, [class*="canvasButton"]');
             if (canvasBtn) {
                 if (badge.parentNode !== canvasBtn) {
@@ -1099,7 +1123,7 @@
                 return badge;
             }
 
-            // 2. Fallback: input inside entryEngine
+            // 4. Fallback: input element inside engine container
             const engineMin = document.querySelector('.entryEngineMinimize, [class*="entryEngineMinimize"], .entryEngine, [class*="entryEngine"]');
             if (engineMin) {
                 const inputEl = engineMin.querySelector('input');
