@@ -1000,7 +1000,7 @@
         const style = document.createElement('style');
         style.id = 'entry-sync-badge-style';
         style.textContent = `
-            .canvasButton, [class*="canvasButton"], .tessvm-bar-right, .tessvm-bar-side, .tessvm-bar {
+            .canvasButton, .tessvm-bar-right, .tessvm-bar-side, .tessvm-bar {
                 display: inline-flex !important;
                 align-items: center !important;
                 justify-content: flex-end !important;
@@ -1027,6 +1027,21 @@
                 transform: translateY(-5.5px) !important;
                 display: inline-flex !important;
                 align-items: center !important;
+            }
+            .canvasButton > .entry-sync-badge {
+                transform: translateY(-6.5px) !important;
+                margin-right: 6px !important;
+            }
+            .canvasButton > .entry-sync-badge:hover {
+                transform: translateY(-6.5px) scale(1.04) !important;
+            }
+            .entry-sync-badge.is-fullscreen {
+                transform: none !important;
+                display: inline-flex !important;
+                z-index: 999999 !important;
+            }
+            .entry-sync-badge.is-fullscreen:hover {
+                transform: scale(1.04) !important;
             }
             .tessvm-boost, [class*="tessvm-boost"] {
                 transform: translateY(-1px) !important;
@@ -1065,7 +1080,7 @@
             }
             .entry-sync-badge:hover {
                 background: rgba(0, 0, 0, 0.12) !important;
-                transform: translateY(-6.5px) scale(1.04) !important;
+                transform: translateY(0) scale(1.04) !important;
             }
             .entry-sync-badge.is-disabled {
                 opacity: 0.45 !important;
@@ -1450,6 +1465,48 @@
         }, '*');
     }
 
+    function findVisibleCanvasButton() {
+        // Use exact .canvasButton class only — [class*="canvasButton"] can accidentally match
+        // Entry's boost-mode wrapper or other elements that share the substring.
+        const all = document.querySelectorAll('.canvasButton');
+        for (let i = all.length - 1; i >= 0; i--) {
+            const el = all[i];
+            if (el && el.offsetParent !== null) {
+                const rect = el.getBoundingClientRect();
+                if (rect.width > 0 && rect.height > 0) {
+                    return el;
+                }
+            }
+        }
+        return all[all.length - 1] || null;
+    }
+
+    function isEntryFullscreenActive() {
+        try {
+            // 1. Native browser fullscreen
+            if (document.fullscreenElement || document.webkitFullscreenElement || document.mozFullScreenElement || document.msFullscreenElement) {
+                return true;
+            }
+
+            // 2. Unmaximize (축소) button is visible on page
+            const unmaximizeBtn = document.querySelector('button[title*="축소"], button[aria-label*="축소"], button[title*="기본 크기"], [class*="unmaximize"], [class*="Unmaximize"]');
+            if (unmaximizeBtn && unmaximizeBtn.offsetParent !== null) {
+                return true;
+            }
+
+            // 3. Entry fullscreen player container
+            // In Entry, normal/minimized player has class "minimize" (e.g. div.minimize.entry.fsView).
+            // When in fullscreen, .minimize is NOT present on the root player, but fsView is.
+            const fsViewContainer = document.querySelector('.entry.fsView, [class*="entry"][class*="fsView"]');
+            if (fsViewContainer && !fsViewContainer.classList.contains('minimize')) {
+                if (fsViewContainer.offsetParent !== null) {
+                    return true;
+                }
+            }
+        } catch (e) {}
+        return false;
+    }
+
     function getOrCreateStatusBadge() {
         try {
             ensureStatusBadgeStyle();
@@ -1482,6 +1539,12 @@
                 if (badge.parentNode !== tessvmBoost.parentNode || badge.nextSibling !== tessvmBoost) {
                     tessvmBoost.parentNode.insertBefore(badge, tessvmBoost);
                 }
+                badge.classList.remove('is-fullscreen');
+                badge.style.removeProperty('position');
+                badge.style.removeProperty('left');
+                badge.style.removeProperty('right');
+                badge.style.removeProperty('top');
+                badge.style.removeProperty('bottom');
                 return badge;
             }
 
@@ -1491,10 +1554,90 @@
                 if (badge.parentNode !== tessvmRight) {
                     tessvmRight.insertBefore(badge, tessvmRight.firstChild);
                 }
+                badge.classList.remove('is-fullscreen');
+                badge.style.removeProperty('position');
+                badge.style.removeProperty('left');
+                badge.style.removeProperty('right');
+                badge.style.removeProperty('top');
+                badge.style.removeProperty('bottom');
                 return badge;
             }
 
-            // 3. Target standard canvasButton container (.canvasButton)
+            // 3. Normal Workspace page (/ws/): place cleanly at the very top above the stage
+            if (isWorkspacePage()) {
+                const engineContainer = document.querySelector('.entryEngine, [class*="entryEngine"], #entryCanvas');
+                if (engineContainer && engineContainer.parentNode) {
+                    const targetParent = engineContainer.parentNode;
+                    if (badge.parentNode !== targetParent || badge !== targetParent.firstChild) {
+                        targetParent.insertBefore(badge, targetParent.firstChild);
+                    }
+                    badge.classList.remove('is-fullscreen');
+                    badge.style.removeProperty('position');
+                    badge.style.removeProperty('left');
+                    badge.style.removeProperty('right');
+                    badge.style.removeProperty('top');
+                    badge.style.removeProperty('bottom');
+                    return badge;
+                }
+            }
+
+            // 4. Entry Fullscreen Mode (전체화면 / 확대 모드)
+            if (isEntryFullscreenActive()) {
+                badge.classList.add('is-fullscreen');
+
+                // Find the coordinate/grid button strictly inside fullscreen containers
+                const gridBtn = document.querySelector(
+                    '.entryEngineMinimize button.entryCoordinateButtonMinimize, ' +
+                    '.fsView button.entryCoordinateButtonMinimize, ' +
+                    '.entryEngineMinimize [class*="entryCoordinateButton"], ' +
+                    '.fsView [class*="entryCoordinateButton"]'
+                );
+
+                if (gridBtn && gridBtn.parentNode) {
+                    const parent = gridBtn.parentNode;
+
+                    // Ensure parent is positioned so we can use absolute coords within it
+                    try {
+                        const ps = window.getComputedStyle(parent);
+                        if (ps.position === 'static') {
+                            parent.style.position = 'relative';
+                        }
+                    } catch (e) {}
+
+                    // Append badge into the same container as the grid button
+                    if (badge.parentNode !== parent) {
+                        parent.appendChild(badge);
+                    }
+
+                    // Position badge via absolute coords relative to parent
+                    try {
+                        const parentRect = parent.getBoundingClientRect();
+                        const gridRect = gridBtn.getBoundingClientRect();
+
+                        if (parentRect.width > 0 && gridRect.width > 0) {
+                            badge.style.position = 'absolute';
+                            badge.style.top = 'auto';
+                            badge.style.left = 'auto';
+                            // Distance from parent's RIGHT edge to the LEFT edge of the grid button + gap
+                            badge.style.right = (parentRect.right - gridRect.left + 8) + 'px';
+                            // Vertically center badge in the parent bar
+                            badge.style.bottom = Math.max(0, Math.round((parentRect.height - 18) / 2)) + 'px';
+                        }
+                    } catch (e) {}
+
+                    return badge;
+                }
+            }
+
+            // 5. Minimized Mode (축소 모드) — EXACTLY as in bbac451
+            badge.classList.remove('is-fullscreen');
+            badge.style.removeProperty('position');
+            badge.style.removeProperty('left');
+            badge.style.removeProperty('right');
+            badge.style.removeProperty('bottom');
+            badge.style.removeProperty('top');
+
+            // Target standard canvasButton container (.canvasButton)
             const canvasBtn = document.querySelector('.canvasButton, [class*="canvasButton"]');
             if (canvasBtn) {
                 try {
@@ -1504,13 +1647,13 @@
                     canvasBtn.style.whiteSpace = 'nowrap';
                 } catch (e) {}
 
-                if (badge.parentNode !== canvasBtn) {
+                if (badge.parentNode !== canvasBtn || badge !== canvasBtn.firstChild) {
                     canvasBtn.insertBefore(badge, canvasBtn.firstChild);
                 }
                 return badge;
             }
 
-            // 4. Target Entry Engine container (Workspace page): keep cleanly positioned above the engine/canvas
+            // 6. Fallback: Entry Engine container
             const engineContainer = document.querySelector('.entryEngine, [class*="entryEngine"], #entryCanvas');
             if (engineContainer && engineContainer.parentNode) {
                 const targetParent = engineContainer.parentNode;
@@ -1541,8 +1684,12 @@
             const dotEl = badge.querySelector('.badge-dot');
             const textEl = badge.querySelector('.badge-text');
 
+            // Determine if in fullscreen to keep is-fullscreen class in sync
+            const isFullscreenNow = isEntryFullscreenActive();
+            const fsClass = isFullscreenNow ? 'is-fullscreen' : '';
+
             if (!entrySyncEnabled) {
-                badge.className = 'entry-sync-badge is-disabled';
+                badge.className = `entry-sync-badge is-disabled ${fsClass}`.trim();
                 if (dotEl) {
                     dotEl.style.setProperty('background-color', '#94a3b8', 'important');
                     dotEl.style.setProperty('box-shadow', 'none', 'important');
@@ -1572,7 +1719,7 @@
                 labelText = hasSync ? 'SYNC 연결 불가' : '연결 불가';
             }
 
-            badge.className = `entry-sync-badge ${colorClass} ${isMoving}`.trim();
+            badge.className = `entry-sync-badge ${colorClass} ${isMoving} ${fsClass}`.trim();
 
             if (textEl && textEl.textContent !== labelText) {
                 textEl.textContent = labelText;
@@ -1584,11 +1731,34 @@
     setInterval(updateStatusBadge, 1000);
     window.addEventListener('fullscreenchange', () => {
         setTimeout(updateStatusBadge, 50);
-        setTimeout(updateStatusBadge, 300);
+        setTimeout(updateStatusBadge, 250);
+        setTimeout(updateStatusBadge, 600);
+    });
+    document.addEventListener('fullscreenchange', () => {
+        setTimeout(updateStatusBadge, 50);
+        setTimeout(updateStatusBadge, 250);
+        setTimeout(updateStatusBadge, 600);
+    });
+    document.addEventListener('webkitfullscreenchange', () => {
+        setTimeout(updateStatusBadge, 50);
+        setTimeout(updateStatusBadge, 250);
+        setTimeout(updateStatusBadge, 600);
     });
     window.addEventListener('resize', () => {
-        setTimeout(updateStatusBadge, 100);
+        setTimeout(updateStatusBadge, 50);
+        setTimeout(updateStatusBadge, 200);
     });
+    // Instant response when user clicks fullscreen or minimize button
+    document.addEventListener('click', (e) => {
+        const target = e.target;
+        if (!target) return;
+        const btn = target.closest ? target.closest('button, [role="button"]') : null;
+        if (btn && (btn.className.includes('Minimize') || btn.className.includes('FullScreen') || btn.title?.includes('화면') || btn.title?.includes('축소') || btn.title?.includes('최대'))) {
+            setTimeout(updateStatusBadge, 50);
+            setTimeout(updateStatusBadge, 250);
+            setTimeout(updateStatusBadge, 600);
+        }
+    }, true);
 
     function postInspectionUpdate() {
         const inspection = (!window.Entry && tess.vm) ? tessInspect() : inspectProjectVariables();
