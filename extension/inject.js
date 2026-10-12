@@ -995,7 +995,6 @@
     }
 
     // ===== 6. Status Badge Component & Inspect Entry Variables =====
-    // ===== 6. Status Badge Component & Inspect Entry Variables =====
     function ensureStatusBadgeStyle() {
         if (document.getElementById('entry-sync-badge-style')) return;
         const style = document.createElement('style');
@@ -1024,11 +1023,20 @@
                 margin-right: 0 !important;
             }
             .canvasButton > *:not(button):not(.entry-sync-badge),
-            [class*="canvasButton"] > *:not(button):not(.entry-sync-badge),
-            .tessvm-boost, [class*="tessvm-boost"] {
+            [class*="canvasButton"] > *:not(button):not(.entry-sync-badge) {
                 transform: translateY(-5.5px) !important;
                 display: inline-flex !important;
                 align-items: center !important;
+            }
+            .tessvm-boost, [class*="tessvm-boost"] {
+                transform: translateY(-1px) !important;
+                display: inline-flex !important;
+                align-items: center !important;
+            }
+            .tessvm-bar .entry-sync-badge,
+            .tessvm-bar-right .entry-sync-badge,
+            .tessvm-bar-side .entry-sync-badge {
+                transform: translateY(-2px) !important;
             }
             .entry-sync-badge {
                 display: inline-flex !important;
@@ -1231,10 +1239,24 @@
         (document.head || document.documentElement).appendChild(style);
     }
 
+    function hasTessvm() {
+        return !!(
+            window.tessvm ||
+            (typeof tess !== 'undefined' && tess.vm) ||
+            document.querySelector('.tessvm-boost, [class*="tessvm-boost"], .tessvm-bar, [class*="tessvm-bar"]')
+        );
+    }
+
     function isEngineRunning() {
         try {
             if (window.Entry && window.Entry.engine && typeof window.Entry.engine.isState === 'function') {
-                return window.Entry.engine.isState('run');
+                if (window.Entry.engine.isState('run') || window.Entry.engine.isState('pause')) {
+                    return true;
+                }
+            }
+            const tvm = (typeof tess !== 'undefined' && tess.vm) || (window.tessvm && (window.tessvm.vm || window.tessvm));
+            if (tvm && tvm.state) {
+                return tvm.state !== 'stop';
             }
             if (window.tessvm && window.tessvm.state) {
                 return window.tessvm.state !== 'stop';
@@ -1270,47 +1292,82 @@
         try {
             isGameStopping = true;
 
-            const stopBtnSelectors = [
-                'button[class*="entryEngineButtonStop"]',
-                'button[class*="entryEngineStopButton"]',
-                '[class*="entryEngineButtonStop"]',
-                '[class*="entryEngineStopButton"]',
-                'button[title*="정지"]',
-                'button[title*="Stop"]',
-                'button[aria-label*="정지"]',
-                'button[aria-label*="Stop"]',
-                '[class*="tessvm-stop"]',
-                '[class*="stopButton"]',
-                '[class*="StopButton"]'
-            ];
+            if (hasTessvm()) {
+                // 만약 tessvm 이 있다면: [부스트모드를 지금보다 많이 내리고, 작품 정지 잘 하도록 수정된 코드]
+                const tessStopSelectors = [
+                    '.tessvm-stop',
+                    '[class*="tessvm-stop"]',
+                    'button.tessvm-stop',
+                    '.tessvm-bar-right [class*="stop"]',
+                    '.tessvm-bar [class*="stop"]',
+                    '.tessvm-bar button[title*="정지"]',
+                    '.tessvm-bar button[aria-label*="정지"]',
+                    '.tessvm-bar button[title*="Stop"]',
+                    '.tessvm-bar button[aria-label*="Stop"]'
+                ];
 
-            let clickedDOM = false;
-            for (const sel of stopBtnSelectors) {
-                const btn = document.querySelector(sel);
-                if (btn) {
-                    clickedDOM = simulateRealClick(btn);
-                    if (clickedDOM) {
-                        console.log(`[EntrySync Inject] 🎯 Simulated real user click on DOM stop button: '${sel}'`);
-                        break;
+                let tessClicked = false;
+                for (const sel of tessStopSelectors) {
+                    const btn = document.querySelector(sel);
+                    if (btn) {
+                        tessClicked = simulateRealClick(btn);
+                        if (tessClicked) {
+                            console.log(`[EntrySync Inject] 🎯 tessvm DOM stop button clicked: '${sel}'`);
+                            break;
+                        }
                     }
                 }
-            }
 
-            // Fallback ONLY IF no DOM stop button was found or clicked
-            if (!clickedDOM) {
-                if (window.Entry && window.Entry.engine) {
-                    if (typeof window.Entry.engine.stop === 'function') {
-                        try {
-                            window.Entry.engine.stop();
-                            console.log('[EntrySync Inject] 🎯 Fallback: Executed Entry.engine.stop()');
-                        } catch (e) {}
-                    }
-                }
-                if (window.tessvm && typeof window.tessvm.stop === 'function') {
-                    try {
+                // Call tessvm stop API
+                try {
+                    const tvm = (typeof tess !== 'undefined' && tess.vm) || (window.tessvm && (window.tessvm.vm || window.tessvm));
+                    if (tvm && typeof tvm.stop === 'function') {
+                        tvm.stop();
+                        console.log('[EntrySync Inject] 🎯 tessvm VM.stop() called');
+                    } else if (window.tessvm && typeof window.tessvm.stop === 'function') {
                         window.tessvm.stop();
-                        console.log('[EntrySync Inject] 🎯 Fallback: Executed tessvm.stop()');
-                    } catch (e) {}
+                        console.log('[EntrySync Inject] 🎯 window.tessvm.stop() called');
+                    }
+                } catch (e) {
+                    console.error('[EntrySync Inject] tessvm stop error:', e);
+                }
+            } else {
+                // 아니면: [그냥 지금처럼 동작하는 코드]
+                const stopBtnSelectors = [
+                    'button[class*="entryEngineButtonStop"]',
+                    'button[class*="entryEngineStopButton"]',
+                    '[class*="entryEngineButtonStop"]',
+                    '[class*="entryEngineStopButton"]',
+                    'button[title*="정지"]',
+                    'button[title*="Stop"]',
+                    'button[aria-label*="정지"]',
+                    'button[aria-label*="Stop"]',
+                    '[class*="stopButton"]',
+                    '[class*="StopButton"]'
+                ];
+
+                let clickedDOM = false;
+                for (const sel of stopBtnSelectors) {
+                    const btn = document.querySelector(sel);
+                    if (btn) {
+                        clickedDOM = simulateRealClick(btn);
+                        if (clickedDOM) {
+                            console.log(`[EntrySync Inject] 🎯 Simulated real user click on DOM stop button: '${sel}'`);
+                            break;
+                        }
+                    }
+                }
+
+                // Fallback ONLY IF no DOM stop button was found or clicked
+                if (!clickedDOM) {
+                    if (window.Entry && window.Entry.engine) {
+                        if (typeof window.Entry.engine.stop === 'function') {
+                            try {
+                                window.Entry.engine.stop();
+                                console.log('[EntrySync Inject] 🎯 Fallback: Executed Entry.engine.stop()');
+                            } catch (e) {}
+                        }
+                    }
                 }
             }
 
@@ -1453,26 +1510,12 @@
                 return badge;
             }
 
-            // 4. Target header or control bar buttons inside Entry Engine container
-            const controlBtn = document.querySelector('[class*="entryEngineSpeed"], [class*="entryEngineMinimize"], [class*="entryEngineHeader"]');
-            if (controlBtn && controlBtn.parentNode) {
-                const parent = controlBtn.parentNode;
-                try {
-                    parent.style.display = 'inline-flex';
-                    parent.style.alignItems = 'center';
-                } catch (e) {}
-                if (badge.parentNode !== parent) {
-                    parent.insertBefore(badge, controlBtn);
-                }
-                return badge;
-            }
-
-            // 5. Fallback: input or canvas element inside engine container
-            const engineContainer = document.querySelector('.entryEngineMinimize, [class*="entryEngineMinimize"], .entryEngine, [class*="entryEngine"], #entryCanvas');
-            if (engineContainer) {
-                const targetParent = engineContainer.parentNode || engineContainer;
-                if (targetParent && badge.parentNode !== targetParent) {
-                    targetParent.insertBefore(badge, targetParent.firstChild);
+            // 4. Target Entry Engine container (Workspace page): keep cleanly positioned above the engine/canvas
+            const engineContainer = document.querySelector('.entryEngine, [class*="entryEngine"], #entryCanvas');
+            if (engineContainer && engineContainer.parentNode) {
+                const targetParent = engineContainer.parentNode;
+                if (badge.parentNode !== targetParent || badge.nextSibling !== engineContainer) {
+                    targetParent.insertBefore(badge, engineContainer);
                 }
                 return badge;
             }
@@ -1537,8 +1580,15 @@
         } catch (e) {}
     }
 
-    // Keep status badge updated periodically & on DOM updates
+    // Keep status badge updated periodically & on DOM / fullscreen updates
     setInterval(updateStatusBadge, 1000);
+    window.addEventListener('fullscreenchange', () => {
+        setTimeout(updateStatusBadge, 50);
+        setTimeout(updateStatusBadge, 300);
+    });
+    window.addEventListener('resize', () => {
+        setTimeout(updateStatusBadge, 100);
+    });
 
     function postInspectionUpdate() {
         const inspection = (!window.Entry && tess.vm) ? tessInspect() : inspectProjectVariables();
